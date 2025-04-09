@@ -3,6 +3,7 @@ import JSONRPC
 import LanguageServerProtocol
 import Status
 import SuggestionBasic
+import ConversationServiceProvider
 
 struct GitHubCopilotDoc: Codable {
     var source: String
@@ -88,6 +89,11 @@ public func editorConfiguration() -> JSONValue {
     return .hash(d)
 }
 
+public enum SignInInitiateStatus: String, Codable {
+    case promptUserDeviceFlow = "PromptUserDeviceFlow"
+    case alreadySignedIn = "AlreadySignedIn"
+}
+
 enum GitHubCopilotRequest {
     struct GetVersion: GitHubCopilotRequestType {
         struct Response: Codable {
@@ -112,11 +118,12 @@ enum GitHubCopilotRequest {
 
     struct SignInInitiate: GitHubCopilotRequestType {
         struct Response: Codable {
-            var verificationUri: String
-            var status: String
-            var userCode: String
-            var expiresIn: Int
-            var interval: Int
+            var status: SignInInitiateStatus
+            var userCode: String?
+            var verificationUri: String?
+            var expiresIn: Int?
+            var interval: Int?
+            var user: String?
         }
 
         var request: ClientRequest {
@@ -331,6 +338,24 @@ enum GitHubCopilotRequest {
             return .custom("conversation/rating", dict)
         }
     }
+    
+    // MARK: Conversation templates
+
+    struct GetTemplates: GitHubCopilotRequestType {
+        typealias Response = Array<ChatTemplate>
+
+        var request: ClientRequest {
+            .custom("conversation/templates", .hash([:]))
+        }
+    }
+
+    struct CopilotModels: GitHubCopilotRequestType {
+        typealias Response = Array<CopilotModel>
+
+        var request: ClientRequest {
+            .custom("copilot/models", .hash([:]))
+        }
+    }
 
     // MARK: Copy code
 
@@ -345,6 +370,20 @@ enum GitHubCopilotRequest {
             return .custom("conversation/copyCode", dict)
         }
     }
+    
+    // MARK: Telemetry
+
+    struct TelemetryException: GitHubCopilotRequestType {
+        struct Response: Codable {}
+
+        var params: TelemetryExceptionParams
+
+        var request: ClientRequest {
+            let data = (try? JSONEncoder().encode(params)) ?? Data()
+            let dict = (try? JSONDecoder().decode(JSONValue.self, from: data)) ?? .hash([:])
+            return .custom("telemetry/exception", dict)
+        }
+    }
 }
 
 // MARK: Notifications
@@ -354,7 +393,6 @@ public enum GitHubCopilotNotification {
     public struct StatusNotification: Codable {
         public enum StatusKind : String, Codable {
             case normal = "Normal"
-            case inProgress = "InProgress"
             case error = "Error"
             case warning = "Warning"
             case inactive = "Inactive"
@@ -363,8 +401,6 @@ public enum GitHubCopilotNotification {
                 switch self {
                 case .normal:
                         .normal
-                case .inProgress:
-                        .inProgress
                 case .error:
                         .error
                 case .warning:
@@ -375,7 +411,8 @@ public enum GitHubCopilotNotification {
             }
         }
 
-        public var status: StatusKind
+        public var kind: StatusKind
+        public var busy: Bool
         public var message: String
 
         public static func decode(fromParams params: JSONValue?) -> StatusNotification? {

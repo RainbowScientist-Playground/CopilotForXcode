@@ -22,6 +22,14 @@ public class XPCService: NSObject, XPCServiceProtocol {
             reply(await Status.shared.getAXStatus())
         }
     }
+    
+    public func getXPCServiceExtensionPermission(
+        withReply reply: @escaping (ExtensionPermissionStatus) -> Void
+    ) {
+        Task {
+            reply(await Status.shared.getExtensionStatus())
+        }
+    }
 
     // MARK: - Suggestion
 
@@ -148,7 +156,7 @@ public class XPCService: NSObject, XPCServiceProtocol {
         withReply reply: @escaping (Data?, Error?) -> Void
     ) {
         let handler = PseudoCommandHandler()
-        handler.openChat(forceDetach: false)
+        handler.openChat(forceDetach: true)
         reply(nil, nil)
     }
 

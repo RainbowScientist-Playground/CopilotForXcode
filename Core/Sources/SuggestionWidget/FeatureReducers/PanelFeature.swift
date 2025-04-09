@@ -21,6 +21,9 @@ public struct PanelFeature {
         // MARK: SuggestionPanel
 
         var suggestionPanelState = SuggestionPanelFeature.State()
+
+        var warningMessage: String?
+        var warningURL: String?
     }
 
     public enum Action: Equatable {
@@ -38,6 +41,9 @@ public struct PanelFeature {
 
         case sharedPanel(SharedPanelFeature.Action)
         case suggestionPanel(SuggestionPanelFeature.Action)
+
+        case presentWarning(message: String, url: String?)
+        case dismissWarning
     }
 
     @Dependency(\.suggestionWidgetControllerDependency) var suggestionWidgetControllerDependency
@@ -141,6 +147,20 @@ public struct PanelFeature {
                 return .none
 
             case .suggestionPanel:
+                return .none
+
+            case .presentWarning(let message, let url):
+                state.warningMessage = message
+                state.warningURL = url
+                state.suggestionPanelState.warningMessage = message
+                state.suggestionPanelState.warningURL = url
+                return .none
+
+            case .dismissWarning:
+                state.warningMessage = nil
+                state.warningURL = nil
+                state.suggestionPanelState.warningMessage = nil
+                state.suggestionPanelState.warningURL = nil
                 return .none
             }
         }

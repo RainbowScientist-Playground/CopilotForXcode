@@ -1,19 +1,18 @@
 {
   "images" : [
     {
-      "filename" : "copilot-16.png",
-      "idiom" : "universal",
-      "scale" : "1x"
+      "filename" : "Status=active, Mode=dark.svg",
+      "idiom" : "universal"
     },
     {
-      "filename" : "copilot-32.png",
-      "idiom" : "universal",
-      "scale" : "2x"
-    },
-    {
-      "filename" : "copilot-48.png",
-      "idiom" : "universal",
-      "scale" : "3x"
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "filename" : "Status=active, Mode=white.svg",
+      "idiom" : "universal"
     }
   ],
   "info" : {
@@ -21,6 +20,6 @@
     "version" : 1
   },
   "properties" : {
-    "template-rendering-intent" : "template"
+    "preserves-vector-representation" : true
   }
 }

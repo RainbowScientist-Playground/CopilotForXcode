@@ -13,13 +13,13 @@ public enum GitHubCopilotAccountStatus: String, Codable, CustomStringConvertible
         case .alreadySignedIn:
             return "Already Signed In"
         case .maybeOk:
-            return "Maybe OK"
+            return "Unknown"
         case .notAuthorized:
-            return "Not Authorized"
+            return "No Subscription"
         case .notSignedIn:
             return "Not Signed In"
         case .ok:
-            return "OK"
+            return "Active"
         case .failedToGetToken:
             return "Failed to Get Token"
         }

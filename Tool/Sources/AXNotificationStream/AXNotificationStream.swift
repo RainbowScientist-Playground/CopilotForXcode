@@ -110,6 +110,7 @@ public final class AXNotificationStream: AsyncSequence {
             )
             var pendingRegistrationNames = Set(notificationNames)
             var retry = 0
+            var shouldLogAXDisabledEvent: Bool = true
             while !pendingRegistrationNames.isEmpty, retry < 100 {
                 guard let self else { return }
                 retry += 1
@@ -125,35 +126,39 @@ public final class AXNotificationStream: AsyncSequence {
                     }
                     switch e {
                     case .success:
+                        shouldLogAXDisabledEvent = true
                         pendingRegistrationNames.remove(name)
                         await Status.shared.updateAXStatus(.granted)
                     case .actionUnsupported:
-                        Logger.service.error("AXObserver: Action unsupported: \(name)")
+                        Logger.service.info("AXObserver: Action unsupported: \(name)")
                         pendingRegistrationNames.remove(name)
                     case .apiDisabled:
-                        Logger.service
-                            .error("AXObserver: Accessibility API disabled, will try again later")
+                        if shouldLogAXDisabledEvent { // Avoid keeping log AX disabled too many times
+                            shouldLogAXDisabledEvent = false
+                            Logger.service
+                                .error("AXObserver: Accessibility API disabled, will try again later")
+                        }
                         retry -= 1
                         await Status.shared.updateAXStatus(.notGranted)
                     case .invalidUIElement:
                         Logger.service
-                            .error("AXObserver: Invalid UI element, notification name \(name)")
+                            .info("AXObserver: Invalid UI element, notification name \(name)")
                         pendingRegistrationNames.remove(name)
                     case .invalidUIElementObserver:
-                        Logger.service.error("AXObserver: Invalid UI element observer")
+                        Logger.service.info("AXObserver: Invalid UI element observer")
                         pendingRegistrationNames.remove(name)
                     case .cannotComplete:
                         Logger.service
-                            .error("AXObserver: Failed to observe \(name), will try again later")
+                            .info("AXObserver: Failed to observe \(name), will try again later")
                     case .notificationUnsupported:
-                        Logger.service.error("AXObserver: Notification unsupported: \(name)")
+                        Logger.service.info("AXObserver: Notification unsupported: \(name)")
                         pendingRegistrationNames.remove(name)
                     case .notificationAlreadyRegistered:
                         Logger.service.info("AXObserver: Notification already registered: \(name)")
                         pendingRegistrationNames.remove(name)
                     default:
                         Logger.service
-                            .error(
+                            .info(
                                 "AXObserver: Unrecognized error \(e) when registering \(name), will try again later"
                             )
                     }

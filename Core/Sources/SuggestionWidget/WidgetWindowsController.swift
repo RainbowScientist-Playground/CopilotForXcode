@@ -360,7 +360,8 @@ extension WidgetWindowsController {
             await MainActor.run {
                 let state = store.withState { $0 }
                 let isChatPanelDetached = state.chatPanelState.isDetached
-                let hasChat = !state.chatPanelState.chatTabGroup.tabInfo.isEmpty
+                let hasChat = state.chatPanelState.currentChatWorkspace != nil
+                    && !state.chatPanelState.currentChatWorkspace!.tabInfo.isEmpty
 
                 if let activeApp, activeApp.isXcode {
                     let application = activeApp.appElement
@@ -731,6 +732,8 @@ public final class WidgetWindows {
     }()
 
     @MainActor
+    // The toast window area is now capturing mouse events
+    // Even in the transparent parts where there's no visible content.
     lazy var toastWindow = {
         let it = CanBecomeKeyWindow(
             contentRect: .zero,
@@ -739,9 +742,9 @@ public final class WidgetWindows {
             defer: false
         )
         it.isReleasedWhenClosed = false
-        it.isOpaque = true
+        it.isOpaque = false
         it.backgroundColor = .clear
-        it.level = widgetLevel(0)
+        it.level = widgetLevel(2)
         it.collectionBehavior = [.fullScreenAuxiliary, .transient, .canJoinAllSpaces]
         it.hasShadow = false
         it.contentView = NSHostingView(
@@ -751,7 +754,6 @@ public final class WidgetWindows {
             ))
         )
         it.setIsVisible(true)
-        it.ignoresMouseEvents = true
         it.canBecomeKeyChecker = { false }
         return it
     }()

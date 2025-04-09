@@ -25,6 +25,7 @@ public final class Logger {
     public static let communicationBridge = Logger(category: "CommunicationBridge")
     public static let workspacePool = Logger(category: "WorkspacePool")
     public static let debug = Logger(category: "Debug")
+    public static var telemetryLogger: TelemetryLoggerProvider? = nil
     #if DEBUG
     /// Use a temp logger to log something temporary. I won't be available in release builds.
     public static let temp = Logger(category: "Temp")
@@ -39,9 +40,11 @@ public final class Logger {
     func log(
         level: LogLevel,
         message: String,
+        error: Error? = nil,
         file: StaticString = #file,
         line: UInt = #line,
-        function: StaticString = #function
+        function: StaticString = #function,
+        callStackSymbols: [String] = []
     ) {
         let osLogType: OSLogType
         switch level {
@@ -55,6 +58,28 @@ public final class Logger {
 
         os_log("%{public}@", log: osLog, type: osLogType, message as CVarArg)
         fileLogger.log(level: level, category: category, message: message)
+        
+        if osLogType == .error {
+            if let error = error {
+                Logger.telemetryLogger?.sendError(
+                    error: error,
+                    category: category,
+                    file: file,
+                    line: line,
+                    function: function,
+                    callStackSymbols: callStackSymbols
+                )
+            } else {
+                Logger.telemetryLogger?.sendError(
+                    message: message,
+                    category: category,
+                    file: file,
+                    line: line,
+                    function: function,
+                    callStackSymbols: callStackSymbols
+                )
+            }
+        }
     }
 
     public func debug(
@@ -84,23 +109,34 @@ public final class Logger {
         _ message: String,
         file: StaticString = #file,
         line: UInt = #line,
-        function: StaticString = #function
+        function: StaticString = #function,
+        callStackSymbols: [String] = []
     ) {
-        log(level: .error, message: message, file: file, line: line, function: function)
+        log(
+            level: .error,
+            message: message,
+            file: file,
+            line: line,
+            function: function,
+            callStackSymbols: callStackSymbols
+        )
     }
 
     public func error(
         _ error: Error,
         file: StaticString = #file,
         line: UInt = #line,
-        function: StaticString = #function
+        function: StaticString = #function,
+        callStackSymbols: [String] = Thread.callStackSymbols
     ) {
         log(
             level: .error,
             message: error.localizedDescription,
+            error: error,
             file: file,
             line: line,
-            function: function
+            function: function,
+            callStackSymbols: callStackSymbols
         )
     }
 

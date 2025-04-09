@@ -38,6 +38,7 @@ public struct AutoresizingCustomTextEditor: View {
             CustomTextEditor(
                 text: $text,
                 font: font,
+                maxHeight: maxHeight,
                 onSubmit: onSubmit,
                 completions: completions
             )
@@ -54,6 +55,7 @@ public struct CustomTextEditor: NSViewRepresentable {
 
     @Binding public var text: String
     public let font: NSFont
+    public let maxHeight: Double
     public let isEditable: Bool
     public let onSubmit: () -> Void
     public var completions: (_ text: String, _ words: [String], _ range: NSRange) -> [String]
@@ -62,6 +64,7 @@ public struct CustomTextEditor: NSViewRepresentable {
         text: Binding<String>,
         font: NSFont,
         isEditable: Bool = true,
+        maxHeight: Double,
         onSubmit: @escaping () -> Void,
         completions: @escaping (_ text: String, _ words: [String], _ range: NSRange)
             -> [String] = { _, _, _ in [] }
@@ -69,12 +72,13 @@ public struct CustomTextEditor: NSViewRepresentable {
         _text = text
         self.font = font
         self.isEditable = isEditable
+        self.maxHeight = maxHeight
         self.onSubmit = onSubmit
         self.completions = completions
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
-        context.coordinator.completions = completions
+//        context.coordinator.completions = completions
         let textView = (context.coordinator.theTextView.documentView as! NSTextView)
         textView.delegate = context.coordinator
         textView.string = text
@@ -84,12 +88,17 @@ public struct CustomTextEditor: NSViewRepresentable {
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
+        textView.setAccessibilityLabel("Chat Input, Ask Copilot. Type to ask questions or type / for topics, press enter to send out the request. Use the Chat Accessibility Help command for more information.")
 
-        return context.coordinator.theTextView
+        // Configure scroll view
+        let scrollView = context.coordinator.theTextView
+        scrollView.hasHorizontalScroller = false
+        context.coordinator.observeHeight(scrollView: scrollView, maxHeight: maxHeight)
+        return scrollView
     }
 
     public func updateNSView(_ nsView: NSScrollView, context: Context) {
-        context.coordinator.completions = completions
+//        context.coordinator.completions = completions
         let textView = (context.coordinator.theTextView.documentView as! NSTextView)
         textView.isEditable = isEditable
         guard textView.string != text else { return }
@@ -104,6 +113,7 @@ public extension CustomTextEditor {
         var theTextView = NSTextView.scrollableTextView()
         var affectedCharRange: NSRange?
         var completions: (String, [String], _ range: NSRange) -> [String] = { _, _, _ in [] }
+        var heightObserver: NSKeyValueObservation?
 
         init(_ view: CustomTextEditor) {
             self.view = view
@@ -151,6 +161,19 @@ public extension CustomTextEditor {
         ) -> [String] {
             index?.pointee = -1
             return completions(textView.textStorage?.string ?? "", words, charRange)
+        }
+
+        func observeHeight(scrollView: NSScrollView, maxHeight: Double) {
+            let textView = scrollView.documentView as! NSTextView
+            heightObserver = textView.observe(\NSTextView.frame) { [weak scrollView] _, _ in
+                guard let scrollView = scrollView else { return }
+                let contentHeight = textView.frame.height
+                scrollView.hasVerticalScroller = contentHeight >= maxHeight
+            }
+        }
+
+        deinit {
+            heightObserver?.invalidate()
         }
     }
 }

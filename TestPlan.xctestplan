@@ -91,6 +91,13 @@
         "identifier" : "WorkspaceSuggestionServiceTests",
         "name" : "WorkspaceSuggestionServiceTests"
       }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:Core",
+        "identifier" : "ConversationTabTests",
+        "name" : "ConversationTabTests"
+      }
     }
   ],
   "version" : 1

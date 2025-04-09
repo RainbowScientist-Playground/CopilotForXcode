@@ -135,16 +135,10 @@ enum UpdateLocationStrategy {
             }()
             let alignPanelTopToAnchor = fixedAlignment ?? (y > activeScreen.frame.midY)
 
+            let chatPanelFrame = getChatPanelFrame(mainScreen)
+            
             if putPanelToTheRight {
                 let anchorFrame = proposedAnchorFrameOnTheRightSide
-                let panelFrame = CGRect(
-                    x: proposedPanelX,
-                    y: alignPanelTopToAnchor
-                        ? anchorFrame.maxY - Style.panelHeight
-                        : anchorFrame.minY - editorFrameExpendedSize.height,
-                    width: Style.panelWidth,
-                    height: Style.panelHeight
-                )
                 let tabFrame = CGRect(
                     x: anchorFrame.origin.x,
                     y: alignPanelTopToAnchor
@@ -158,7 +152,7 @@ enum UpdateLocationStrategy {
                     widgetFrame: widgetFrameOnTheRightSide,
                     tabFrame: tabFrame,
                     defaultPanelLocation: .init(
-                        frame: panelFrame,
+                        frame: chatPanelFrame,
                         alignPanelTop: alignPanelTopToAnchor
                     ),
                     suggestionPanelLocation: nil
@@ -197,14 +191,6 @@ enum UpdateLocationStrategy {
 
                 if putAnchorToTheLeft {
                     let anchorFrame = proposedAnchorFrameOnTheLeftSide
-                    let panelFrame = CGRect(
-                        x: proposedPanelX,
-                        y: alignPanelTopToAnchor
-                            ? anchorFrame.maxY - Style.panelHeight
-                            : anchorFrame.minY - editorFrameExpendedSize.height,
-                        width: Style.panelWidth,
-                        height: Style.panelHeight
-                    )
                     let tabFrame = CGRect(
                         x: anchorFrame.origin.x,
                         y: alignPanelTopToAnchor
@@ -217,23 +203,13 @@ enum UpdateLocationStrategy {
                         widgetFrame: widgetFrameOnTheLeftSide,
                         tabFrame: tabFrame,
                         defaultPanelLocation: .init(
-                            frame: panelFrame,
+                            frame: chatPanelFrame,
                             alignPanelTop: alignPanelTopToAnchor
                         ),
                         suggestionPanelLocation: nil
                     )
                 } else {
                     let anchorFrame = proposedAnchorFrameOnTheRightSide
-                    let panelFrame = CGRect(
-                        x: anchorFrame.maxX - Style.panelWidth,
-                        y: alignPanelTopToAnchor
-                            ? anchorFrame.maxY - Style.panelHeight - Style.widgetHeight
-                            - Style.widgetPadding
-                            : anchorFrame.maxY + Style.widgetPadding
-                            - editorFrameExpendedSize.height,
-                        width: Style.panelWidth,
-                        height: Style.panelHeight
-                    )
                     let tabFrame = CGRect(
                         x: anchorFrame.minX - Style.widgetPadding - Style.widgetWidth,
                         y: anchorFrame.origin.y,
@@ -244,7 +220,7 @@ enum UpdateLocationStrategy {
                         widgetFrame: widgetFrameOnTheRightSide,
                         tabFrame: tabFrame,
                         defaultPanelLocation: .init(
-                            frame: panelFrame,
+                            frame: chatPanelFrame,
                             alignPanelTop: alignPanelTopToAnchor
                         ),
                         suggestionPanelLocation: nil
@@ -341,6 +317,16 @@ enum UpdateLocationStrategy {
         }
 
         return selectionFrame
+    }
+    
+    static func getChatPanelFrame(_ screen: NSScreen) -> CGRect {
+        let visibleScreenFrame = screen.visibleFrame
+        // avoid too wide
+        let width = min(Style.panelWidth, visibleScreenFrame.width * 0.3)
+        let height = visibleScreenFrame.height
+        let x = visibleScreenFrame.width - width
+                
+        return CGRect(x: x, y: visibleScreenFrame.height, width: width, height: height)
     }
 }
 

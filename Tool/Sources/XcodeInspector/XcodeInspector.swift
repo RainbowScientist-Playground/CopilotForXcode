@@ -405,7 +405,7 @@ public final class XcodeInspector: ObservableObject {
         """
 
         if UserDefaults.shared.value(for: \.toastForTheReasonWhyXcodeInspectorNeedsToBeRestarted) {
-            toast.toast(content: message, type: .warning)
+            toast.toast(content: message, level: .warning)
         } else {
             Logger.service.info(message)
         }

@@ -92,3 +92,13 @@ public extension SuggestionWidgetController {
     }
 }
 
+extension SuggestionWidgetController {
+    public func presentWarning(message: String, url: String?) {
+        store.send(.panel(.presentWarning(message: message, url: url)))
+    }
+    
+    public func dismissWarning() {
+        store.send(.panel(.dismissWarning))
+    }
+}
+

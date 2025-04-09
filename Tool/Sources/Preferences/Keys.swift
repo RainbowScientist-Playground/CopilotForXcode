@@ -229,6 +229,10 @@ public extension UserDefaultPreferenceKeys {
     var isSuggestionTypeInTheMiddleEnabled: PreferenceKey<Bool> {
         .init(defaultValue: true, key: "IsSuggestionTypeInTheMiddleEnabled")
     }
+    
+    var clsWarningDismissedUntilRelaunch: PreferenceKey<Bool> {
+        .init(defaultValue: false, key: "CLSWarningDismissedUntilRelaunch")
+    }
 }
 
 // MARK: - Chat
@@ -236,7 +240,7 @@ public extension UserDefaultPreferenceKeys {
 public extension UserDefaultPreferenceKeys {
 
     var chatFontSize: PreferenceKey<Double> {
-        .init(defaultValue: 12, key: "ChatFontSize")
+        .init(defaultValue: 13, key: "ChatFontSize")
     }
 
     var chatCodeFontSize: PreferenceKey<Double> {

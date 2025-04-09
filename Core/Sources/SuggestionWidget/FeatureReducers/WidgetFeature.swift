@@ -66,8 +66,9 @@ public struct WidgetFeature {
                         }
                         return false
                     }(),
-                    isContentEmpty: chatPanelState.chatTabGroup.tabInfo.isEmpty
-                        && panelState.sharedPanelState.isEmpty,
+                    isContentEmpty: chatPanelState.currentChatWorkspace == nil
+                        || (chatPanelState.currentChatWorkspace!.tabInfo.isEmpty
+                        && panelState.sharedPanelState.isEmpty),
                     isChatPanelDetached: chatPanelState.isDetached,
                     isChatOpen: chatPanelState.isPanelDisplayed
                 )
@@ -162,7 +163,7 @@ public struct WidgetFeature {
                 }
 
                 let isDisplayingContent = state._internalCircularWidgetState.isDisplayingContent
-                let hasChat = state.chatPanelState.chatTabGroup.selectedTabInfo != nil
+                let hasChat = state.chatPanelState.currentChatWorkspace?.selectedTabInfo != nil
                 let hasPromptToCode = state.panelState.sharedPanelState.content
                     .promptToCodeGroup.activePromptToCode != nil
 

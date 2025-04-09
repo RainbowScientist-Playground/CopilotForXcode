@@ -3,6 +3,8 @@ import Foundation
 import LanguageServerProtocol
 import SuggestionBasic
 import ConversationServiceProvider
+import JSONRPC
+import Logger
 
 enum ConversationSource: String, Codable {
     case panel, inline
@@ -13,13 +15,14 @@ public struct Doc: Codable {
     var uri: String
 }
 
-struct Reference: Codable {
-    let uri: String
-    let position: Position?
-    let visibleRange: SuggestionBasic.CursorRange?
-    let selection: SuggestionBasic.CursorRange?
-    let openedAt: String?
-    let activeAt: String?
+public struct Reference: Codable, Equatable, Hashable {
+    public var type: String = "file"
+    public let uri: String
+    public let position: Position?
+    public let visibleRange: SuggestionBasic.CursorRange?
+    public let selection: SuggestionBasic.CursorRange?
+    public let openedAt: String?
+    public let activeAt: String?
 }
 
 struct ConversationCreateParams: Codable {
@@ -31,6 +34,8 @@ struct ConversationCreateParams: Codable {
     var computeSuggestions: Bool?
     var source: ConversationSource?
     var workspaceFolder: String?
+    var ignoredSkills: [String]?
+    var model: String?
 
     struct Capabilities: Codable {
         var skills: [String]
@@ -38,27 +43,73 @@ struct ConversationCreateParams: Codable {
     }
 }
 
-public struct ConversationProgress: Codable {
-    public struct FollowUp: Codable {
-        public var message: String
-        public var id: String
-        public var type: String
-    }
+// MARK: Conversation Progress
 
-    public let kind: String
+public enum ConversationProgressKind: String, Codable {
+    case begin, report, end
+}
+
+protocol BaseConversationProgress: Codable {
+    var kind: ConversationProgressKind { get }
+    var conversationId: String { get }
+    var turnId: String { get }
+}
+
+public struct ConversationProgressBegin: BaseConversationProgress {
+    public let kind: ConversationProgressKind
+    public let conversationId: String
+    public let turnId: String
+}
+
+public struct ConversationProgressReport: BaseConversationProgress {
+
+    public let kind: ConversationProgressKind
     public let conversationId: String
     public let turnId: String
     public let reply: String?
-    public let suggestedTitle: String?
-
-    init(kind: String, conversationId: String, turnId: String, reply: String = "", suggestedTitle: String? = nil) {
-        self.kind = kind
-        self.conversationId = conversationId
-        self.turnId = turnId
-        self.reply = reply
-        self.suggestedTitle = suggestedTitle
-    }
+    public let references: [Reference]?
 }
+
+public struct ConversationProgressEnd: BaseConversationProgress {
+    public let kind: ConversationProgressKind
+    public let conversationId: String
+    public let turnId: String
+    public let error: CopilotLanguageServerError?
+    public let followUp: ConversationFollowUp?
+    public let suggestedTitle: String?
+}
+
+enum ConversationProgressContainer: Decodable {
+    case begin(ConversationProgressBegin)
+    case report(ConversationProgressReport)
+    case end(end: ConversationProgressEnd)
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+    }
+
+    init(from decoder: Decoder) throws {
+        do {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let kind = try container.decode(ConversationProgressKind.self, forKey: .kind)
+
+            switch kind {
+            case .begin:
+                let begin = try ConversationProgressBegin(from: decoder)
+                self = .begin(begin)
+            case .report:
+                let report = try ConversationProgressReport(from: decoder)
+                self = .report(report)
+            case .end:
+                let end = try ConversationProgressEnd(from: decoder)
+                self = .end(end: end)
+            }
+        } catch {
+            Logger.gitHubCopilot.error("Error decoding ConversationProgressContainer: \(error)")
+            throw error
+        }
+     }
+ }
 
 // MARK: Conversation rating
 
@@ -82,6 +133,9 @@ struct TurnCreateParams: Codable {
     var conversationId: String
     var message: String
     var doc: Doc?
+    var ignoredSkills: [String]?
+    var references: [Reference]?
+    var model: String?
 }
 
 // MARK: Copy
@@ -96,3 +150,13 @@ struct CopyCodeParams: Codable {
     var doc: Doc?
     var source: ConversationSource?
 }
+
+// MARK: Conversation context
+
+public struct ConversationContextParams: Codable {
+    public var conversationId: String
+    public var turnId: String
+    public var skillId: String
+}
+
+public typealias ConversationContextRequest = JSONRPCRequest<ConversationContextParams>

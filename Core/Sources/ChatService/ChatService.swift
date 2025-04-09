@@ -5,10 +5,16 @@ import GitHubCopilotService
 import Preferences
 import ConversationServiceProvider
 import BuiltinExtension
+import JSONRPC
+import Status
+import Persist
+import PersistMiddleware
+import ChatTab
+import Logger
 
 public protocol ChatServiceType {
     var memory: ContextAwareAutoManagedChatMemory { get set }
-    func send(_ id: String, content: String) async throws
+    func send(_ id: String, content: String, skillSet: [ConversationSkill], references: [FileReference], model: String?) async throws
     func stopReceivingMessage() async
     func upvote(_ id: String, _ rating: ConversationRating) async
     func downvote(_ id: String, _ rating: ConversationRating) async
@@ -20,22 +26,27 @@ public final class ChatService: ChatServiceType, ObservableObject {
     public var memory: ContextAwareAutoManagedChatMemory
     @Published public internal(set) var chatHistory: [ChatMessage] = []
     @Published public internal(set) var isReceivingMessage = false
-
+    private let chatTabInfo: ChatTabInfo
     private let conversationProvider: ConversationServiceProvider?
     private let conversationProgressHandler: ConversationProgressHandler
+    private let conversationContextHandler: ConversationContextHandler = ConversationContextHandlerImpl.shared
     private var cancellables = Set<AnyCancellable>()
     private var activeRequestId: String?
-    private var conversationId: String?
-    
+    private(set) public var conversationId: String?
+    private var skillSet: [ConversationSkill] = []
+    private var isRestored: Bool = false
     init(provider: any ConversationServiceProvider,
          memory: ContextAwareAutoManagedChatMemory = ContextAwareAutoManagedChatMemory(),
-         conversationProgressHandler: ConversationProgressHandler = ConversationProgressHandlerImpl.shared) {
+         conversationProgressHandler: ConversationProgressHandler = ConversationProgressHandlerImpl.shared,
+         chatTabInfo: ChatTabInfo) {
         self.memory = memory
         self.conversationProvider = provider
         self.conversationProgressHandler = conversationProgressHandler
+        self.chatTabInfo = chatTabInfo
         memory.chatService = self
         
         subscribeToNotifications()
+        subscribeToConversationContextRequest()
     }
     
     private func subscribeToNotifications() {
@@ -59,27 +70,93 @@ public final class ChatService: ChatServiceType, ObservableObject {
         }.store(in: &cancellables)
     }
     
-    public static func service() -> ChatService {
+    private func subscribeToConversationContextRequest() {
+        self.conversationContextHandler.onConversationContext.sink(receiveValue: { [weak self] (request, completion) in
+            guard let skills = self?.skillSet, !skills.isEmpty, request.params!.conversationId == self?.conversationId else { return }
+            skills.forEach { skill in
+                if (skill.applies(params: request.params!)) {
+                    skill.resolveSkill(request: request, completion: completion)
+                }
+            }
+        }).store(in: &cancellables)
+    }
+    public static func service(for chatTabInfo: ChatTabInfo) -> ChatService {
         let provider = BuiltinExtensionConversationServiceProvider(
             extension: GitHubCopilotExtension.self
         )
-        return ChatService(provider: provider)
+        return ChatService(provider: provider, chatTabInfo: chatTabInfo)
     }
     
-    public func send(_ id: String, content: String) async throws {
+    // this will be triggerred in conversation tab if needed
+    public func restoreIfNeeded() {
+        guard self.isRestored == false else { return }
+        
+        Task {
+            let storedChatMessages = fetchAllChatMessagesFromStorage()
+            await mutateHistory { history in
+                history.append(contentsOf: storedChatMessages)
+            }
+        }
+        
+        self.isRestored = true
+    }
+    
+    public func send(_ id: String, content: String, skillSet: Array<ConversationSkill>, references: Array<FileReference>, model: String? = nil) async throws {
         guard activeRequestId == nil else { return }
         let workDoneToken = UUID().uuidString
         activeRequestId = workDoneToken
         
-        await memory.appendMessage(ChatMessage(id: id, role: .user, content: content, summary: nil, references: []))
+        let chatMessage = ChatMessage(
+            id: id,
+            chatTabID: self.chatTabInfo.id,
+            role: .user,
+            content: content,
+            references: references.toConversationReferences()
+        )
+        await memory.appendMessage(chatMessage)
         
+        // persist
+        saveChatMessageToStorage(chatMessage)
+        
+        if content.hasPrefix("/releaseNotes") {
+            if let fileURL = Bundle.main.url(forResource: "ReleaseNotes", withExtension: "md"),
+                let whatsNewContent = try? String(contentsOf: fileURL)
+            {
+                // will be persist in resetOngoingRequest()
+                // there is no turn id from CLS, just set it as id
+                let clsTurnID = UUID().uuidString
+                let progressMessage = ChatMessage(
+                    id: clsTurnID,
+                    chatTabID: self.chatTabInfo.id,
+                    clsTurnID: clsTurnID,
+                    role: .assistant,
+                    content: whatsNewContent,
+                    references: []
+                )
+                await memory.appendMessage(progressMessage)
+            }
+            resetOngoingRequest()
+            return
+        }
+        
+        let skillCapabilities: [String] = [ CurrentEditorSkill.ID, ProblemsInActiveDocumentSkill.ID ]
+        let supportedSkills: [String] = skillSet.map { $0.id }
+        let ignoredSkills: [String] = skillCapabilities.filter {
+            !supportedSkills.contains($0)
+        }
         let request = ConversationRequest(workDoneToken: workDoneToken,
-                                          content: content, workspaceFolder: "", skills: [])
+                                          content: content,
+                                          workspaceFolder: "",
+                                          skills: skillCapabilities,
+                                          ignoredSkills: ignoredSkills,
+                                          references: references,
+                                          model: model)
+        self.skillSet = skillSet
         try await send(request)
     }
 
     public func sendAndWait(_ id: String, content: String) async throws -> String {
-        try await send(id, content: content)
+        try await send(id, content: content, skillSet: [], references: [])
         if let reply = await memory.history.last(where: { $0.role == .assistant })?.content {
             return reply
         }
@@ -98,6 +175,8 @@ public final class ChatService: ChatServiceType, ObservableObject {
     }
 
     public func clearHistory() async {
+        let messageIds = await memory.history.map { $0.id }
+        
         await memory.clearHistory()
         if let activeRequestId = activeRequestId {
             do {
@@ -106,18 +185,22 @@ public final class ChatService: ChatServiceType, ObservableObject {
                 print("Failed to cancel ongoing request with WDT: \(activeRequestId)")
             }
         }
+        
+        deleteAllChatMessagesFromStorage(messageIds)
         resetOngoingRequest()
     }
 
     public func deleteMessage(id: String) async {
         await memory.removeMessage(id)
+        deleteChatMessageFromStorage(id)
     }
 
+    // Not used for now
     public func resendMessage(id: String) async throws {
         if let message = (await memory.history).first(where: { $0.id == id })
         {
             do {
-                try await send(id, content: message.content)
+                try await send(id, content: message.content, skillSet: [], references: [])
             } catch {
                 print("Failed to resend message")
             }
@@ -128,10 +211,14 @@ public final class ChatService: ChatServiceType, ObservableObject {
         if let message = (await memory.history).first(where: { $0.id == id })
         {
             await mutateHistory { history in
-                history.append(.init(
+                let chatMessage: ChatMessage = .init(
+                    chatTabID: self.chatTabInfo.id,
                     role: .assistant,
                     content: message.content
-                ))
+                )
+                
+                history.append(chatMessage)
+                self.saveChatMessageToStorage(chatMessage)
             }
         }
     }
@@ -175,17 +262,20 @@ public final class ChatService: ChatServiceType, ObservableObject {
 
         if info.specifiedSystemPrompt != nil || info.extraSystemPrompt != nil {
             await mutateHistory { history in
-                history.append(.init(
+                let chatMessage: ChatMessage = .init(
+                    chatTabID: self.chatTabInfo.id,
                     role: .assistant,
                     content: ""
-                ))
+                )
+                history.append(chatMessage)
+                self.saveChatMessageToStorage(chatMessage)
             }
         }
 
         if let sendingMessageImmediately = info.sendingMessageImmediately,
            !sendingMessageImmediately.isEmpty
         {
-            try await send(UUID().uuidString, content: templateProcessor.process(sendingMessageImmediately))
+            try await send(UUID().uuidString, content: templateProcessor.process(sendingMessageImmediately), skillSet: [], references: [])
         }
     }
     
@@ -201,6 +291,7 @@ public final class ChatService: ChatServiceType, ObservableObject {
         // TODO: pass copy code info to Copilot server
     }
 
+    // not used
     public func handleSingleRoundDialogCommand(
         systemPrompt: String?,
         overwriteSystemPrompt: Bool,
@@ -210,34 +301,137 @@ public final class ChatService: ChatServiceType, ObservableObject {
         return try await sendAndWait(UUID().uuidString, content: templateProcessor.process(prompt))
     }
     
-    private func handleProgressBegin(token: String, progress: ConversationProgress) {
+    private func handleProgressBegin(token: String, progress: ConversationProgressBegin) {
         guard let workDoneToken = activeRequestId, workDoneToken == token else { return }
         conversationId = progress.conversationId
         
         Task {
             if var lastUserMessage = await memory.history.last(where: { $0.role == .user }) {
-                lastUserMessage.turnId = progress.turnId
+                lastUserMessage.clsTurnID = progress.turnId
+                saveChatMessageToStorage(lastUserMessage)
             }
         }
     }
 
-    private func handleProgressReport(token: String, progress: ConversationProgress) {
-        guard let workDoneToken = activeRequestId, workDoneToken == token, let reply = progress.reply else { return }
+    private func handleProgressReport(token: String, progress: ConversationProgressReport) {
+        guard let workDownToken = activeRequestId, workDownToken == token else {
+            return
+        }
         
+        let id = progress.turnId
+        var content = ""
+        var references: [ConversationReference] = []
+
+        if let reply = progress.reply {
+            content = reply
+        }
+        
+        if let progressReferences = progress.references, !progressReferences.isEmpty {
+            references = progressReferences.toConversationReferences()
+        }
+        
+        if content.isEmpty && references.isEmpty {
+            return
+        }
+        
+        // create immutable copies
+        let messageContent = content
+        let messageReferences = references
+
         Task {
-            let message = ChatMessage(id: progress.turnId, role: .assistant, content: reply)
+            let message = ChatMessage(
+                id: id,
+                chatTabID: self.chatTabInfo.id,
+                clsTurnID: id,
+                role: .assistant,
+                content: messageContent,
+                references: messageReferences
+            )
+
+            // will persist in resetOngoingRequest()
             await memory.appendMessage(message)
         }
     }
 
-    private func handleProgressEnd(token: String, progress: ConversationProgress) {
+    private func handleProgressEnd(token: String, progress: ConversationProgressEnd) {
         guard let workDoneToken = activeRequestId, workDoneToken == token else { return }
+        let followUp = progress.followUp
+        
+        if let CLSError = progress.error {
+            // CLS Error Code 402: reached monthly chat messages limit
+            if CLSError.code == 402 {
+                Task {
+                    await Status.shared
+                        .updateCLSStatus(.error, busy: false, message: CLSError.message)
+                    let errorMessage = ChatMessage(
+                        id: progress.turnId,
+                        chatTabID: self.chatTabInfo.id,
+                        clsTurnID: progress.turnId,
+                        role: .system,
+                        content: CLSError.message
+                    )
+                    // will persist in resetongoingRequest()
+                    await memory.removeMessage(progress.turnId)
+                    await memory.appendMessage(errorMessage)
+                }
+            } else if CLSError.code == 400 && CLSError.message.contains("model is not supported") {
+                Task {
+                    let errorMessage = ChatMessage(
+                        id: progress.turnId,
+                        chatTabID: self.chatTabInfo.id,
+                        role: .assistant,
+                        content: "",
+                        errorMessage: "Oops, the model is not supported. Please enable it first in [GitHub Copilot settings](https://github.com/settings/copilot)."
+                    )
+                    await memory.appendMessage(errorMessage)
+                }
+            } else {
+                Task {
+                    let errorMessage = ChatMessage(
+                        id: progress.turnId,
+                        chatTabID: self.chatTabInfo.id,
+                        clsTurnID: progress.turnId,
+                        role: .assistant,
+                        content: "",
+                        errorMessage: CLSError.message
+                    )
+                    // will persist in resetOngoingRequest()
+                    await memory.appendMessage(errorMessage)
+                }
+            }
+            resetOngoingRequest()
+            return
+        }
+        
+        Task {
+            let message = ChatMessage(
+                id: progress.turnId,
+                chatTabID: self.chatTabInfo.id,
+                clsTurnID: progress.turnId,
+                role: .assistant,
+                content: "",
+                followUp: followUp,
+                suggestedTitle: progress.suggestedTitle
+            )
+            // will persist in resetOngoingRequest()
+            await memory.appendMessage(message)
+        }
+        
         resetOngoingRequest()
     }
     
     private func resetOngoingRequest() {
         activeRequestId = nil
         isReceivingMessage = false
+        
+        // The message of progress report could change rapidly
+        // Directly upsert the last chat message of history here
+        // Possible repeat upsert, but no harm.
+        Task {
+            if let message = await memory.history.last {
+                saveChatMessageToStorage(message)
+            }
+        }
     }
     
     private func send(_ request: ConversationRequest) async throws {
@@ -248,7 +442,18 @@ public final class ChatService: ChatServiceType, ObservableObject {
             if let conversationId = conversationId {
                 try await conversationProvider?.createTurn(with: conversationId, request: request)
             } else {
-                try await conversationProvider?.createConversation(request)
+                var requestWithTurns = request
+                
+                var chatHistory = self.chatHistory
+                // remove the last user message
+                let _ = chatHistory.popLast()
+                if chatHistory.count > 0 {
+                    // invoke history turns
+                    let turns = chatHistory.toTurns()
+                    requestWithTurns.turns = turns
+                }
+                
+                try await conversationProvider?.createConversation(requestWithTurns)
             }
         } catch {
             resetOngoingRequest()
@@ -257,3 +462,117 @@ public final class ChatService: ChatServiceType, ObservableObject {
     }
 }
 
+
+public final class SharedChatService {
+    public var chatTemplates: [ChatTemplate]? = nil
+    private let conversationProvider: ConversationServiceProvider?
+    
+    public static let shared = SharedChatService.service()
+    
+    init(provider: any ConversationServiceProvider) {
+        self.conversationProvider = provider
+    }
+    
+    public static func service() -> SharedChatService {
+        let provider = BuiltinExtensionConversationServiceProvider(
+            extension: GitHubCopilotExtension.self
+        )
+        return SharedChatService(provider: provider)
+    }
+    
+    public func loadChatTemplates() async -> [ChatTemplate]? {
+        guard self.chatTemplates == nil else { return self.chatTemplates }
+
+        do {
+            if let templates = (try await conversationProvider?.templates()) {
+                self.chatTemplates = templates
+                return templates
+            }
+        } catch {
+            // handle error if desired
+        }
+
+        return nil
+    }
+    
+    public func copilotModels() async -> [CopilotModel] {
+        guard let models = try? await conversationProvider?.models() else { return [] }
+        return models
+    }
+}
+
+
+extension ChatService {
+    
+    // do storage operatoin in the background
+    private func runInBackground(_ operation: @escaping () -> Void) {
+        Task.detached(priority: .utility) {
+            operation()
+        }
+    }
+    
+    func saveChatMessageToStorage(_ message: ChatMessage) {
+        runInBackground {
+            ChatMessageStore.save(message, with: .init(workspacePath: self.chatTabInfo.workspacePath, username: self.chatTabInfo.username))
+        }
+    }
+    
+    func deleteChatMessageFromStorage(_ id: String) {
+        runInBackground {
+                ChatMessageStore.delete(by: id, with: .init(workspacePath: self.chatTabInfo.workspacePath, username: self.chatTabInfo.username))
+        }
+    }
+    func deleteAllChatMessagesFromStorage(_ ids: [String]) {
+        runInBackground {
+            ChatMessageStore.deleteAll(by: ids, with: .init(workspacePath: self.chatTabInfo.workspacePath, username: self.chatTabInfo.username))
+        }
+    }
+    
+    func fetchAllChatMessagesFromStorage() -> [ChatMessage] {
+        return ChatMessageStore.getAll(by: self.chatTabInfo.id, metadata: .init(workspacePath: self.chatTabInfo.workspacePath, username: self.chatTabInfo.username))
+    }
+}
+
+extension Array where Element == Reference {
+    func toConversationReferences() -> [ConversationReference] {
+        return self.map {
+            .init(uri: $0.uri, status: .included, kind: .reference($0))
+        }
+    }
+}
+
+extension Array where Element == FileReference {
+    func toConversationReferences() -> [ConversationReference] {
+        return self.map {
+            .init(uri: $0.url.path, status: .included, kind: .fileReference($0))
+        }
+    }
+}
+extension [ChatMessage] {
+    // transfer chat messages to turns
+    // used to restore chat history for CLS
+    func toTurns() -> [TurnSchema] {
+        var turns: [TurnSchema] = []
+        let count = self.count
+        var index = 0
+        
+        while index < count {
+            let message = self[index]
+            if case .user = message.role {
+                var turn = TurnSchema(request: message.content, turnId: message.clsTurnID)
+                // has next message
+                if index + 1 < count {
+                    let nextMessage = self[index + 1]
+                    if nextMessage.role == .assistant {
+                        turn.response = nextMessage.content
+                        index += 1
+                    }
+                }
+                turns.append(turn)
+            }
+            index += 1
+        }
+        
+        return turns
+    }
+}

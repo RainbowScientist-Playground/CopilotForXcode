@@ -57,6 +57,15 @@ public class XPCExtensionService {
             }
         }
     }
+    
+    public func getXPCServiceExtensionPermission() async throws -> ExtensionPermissionStatus {
+        try await withXPCServiceConnected {
+            service, continuation in
+            service.getXPCServiceExtensionPermission { isGranted in
+                continuation.resume(isGranted)
+            }
+        }
+    }
 
     public func getSuggestedCode(editorContent: EditorContent) async throws -> UpdatedContent? {
         try await suggestionRequest(

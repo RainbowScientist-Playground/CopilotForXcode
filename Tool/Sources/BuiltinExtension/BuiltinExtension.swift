@@ -2,12 +2,16 @@ import CopilotForXcodeKit
 import Foundation
 import Preferences
 import ConversationServiceProvider
+import TelemetryServiceProvider
 
-public typealias CopilotForXcodeCapability = CopilotForXcodeExtensionCapability & CopilotForXcodeChatCapability
+public typealias CopilotForXcodeCapability = CopilotForXcodeExtensionCapability & CopilotForXcodeChatCapability & CopilotForXcodeTelemetryCapability
 
 public protocol CopilotForXcodeChatCapability {
-    /// Not implemented yet.
     var conversationService: ConversationServiceType? { get }
+}
+
+public protocol CopilotForXcodeTelemetryCapability {
+    var telemetryService: TelemetryServiceType? { get }
 }
 
 public protocol BuiltinExtension: CopilotForXcodeCapability {

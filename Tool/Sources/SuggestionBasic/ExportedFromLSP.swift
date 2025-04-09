@@ -64,6 +64,19 @@ public struct CursorRange: Codable, Hashable, Sendable, Equatable, CustomStringC
     public var description: String {
         return "\(start.readableText) - \(end.readableText)"
     }
+    
+    public var isValid: Bool {
+        let startLine = start.line
+        let startCharacter = start.character
+        let endLine = end.line
+        let endCharacter = end.character
+        
+        guard startLine >= 0 && startCharacter >= 0 && endLine >= 0 && endCharacter >= 0 else {return false}
+        
+        guard startLine < endLine || (startLine == endLine && startCharacter <= endCharacter) else {return false}
+        
+        return true
+    }
 }
 
 public extension CursorRange {

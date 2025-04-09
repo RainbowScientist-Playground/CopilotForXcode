@@ -20,7 +20,7 @@ final class ChatPanelWindow: NSWindow {
         self.minimizeWindow = minimizeWindow
         super.init(
             contentRect: .zero,
-            styleMask: [.resizable, .titled, .miniaturizable, .fullSizeContentView],
+            styleMask: [.resizable, .titled, .miniaturizable, .fullSizeContentView, .closable],
             backing: .buffered,
             defer: false
         )
@@ -103,5 +103,8 @@ final class ChatPanelWindow: NSWindow {
     override func miniaturize(_: Any?) {
         minimizeWindow()
     }
-}
 
+    override func close() {
+        minimizeWindow()
+    }
+}

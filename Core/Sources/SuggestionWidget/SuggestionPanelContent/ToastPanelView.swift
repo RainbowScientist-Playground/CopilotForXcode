@@ -4,42 +4,48 @@ import Foundation
 import SwiftUI
 import Toast
 
+private struct HitTestConfiguration: ViewModifier {
+    let hitTestPredicate: () -> Bool
+    
+    func body(content: Content) -> some View {
+        WithPerceptionTracking {
+            content.allowsHitTesting(hitTestPredicate())
+        }
+    }
+}
+
 struct ToastPanelView: View {
     let store: StoreOf<ToastPanel>
+    @Dependency(\.toastController) var toastController
 
     var body: some View {
         WithPerceptionTracking {
             VStack(spacing: 4) {
                 if !store.alignTopToAnchor {
                     Spacer()
+                        .allowsHitTesting(false)
                 }
 
                 ForEach(store.toast.messages) { message in
-                    message.content
-                        .foregroundColor(.white)
-                        .padding(8)
-                        .frame(maxWidth: .infinity)
-                        .background({
-                            switch message.type {
-                            case .info: return Color.accentColor
-                            case .error: return Color(nsColor: .systemRed)
-                            case .warning: return Color(nsColor: .systemOrange)
-                            }
-                        }() as Color, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.black.opacity(0.3), lineWidth: 1)
-                        }
+                    NotificationView(
+                        message: message,
+                        onDismiss: { toastController.dismissMessage(withId: message.id) }
+                    )
+                    .frame(maxWidth: 450)
+                    // Allow hit testing for notification views
+                    .allowsHitTesting(true)
                 }
 
                 if store.alignTopToAnchor {
                     Spacer()
+                        .allowsHitTesting(false)
                 }
             }
             .colorScheme(store.colorScheme)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .allowsHitTesting(false)
+            .background(Color.clear)
+            // Only allow hit testing when there are messages
+            // to prevent the view from blocking the mouse events
+            .modifier(HitTestConfiguration(hitTestPredicate: { !store.toast.messages.isEmpty }))
         }
     }
 }
-

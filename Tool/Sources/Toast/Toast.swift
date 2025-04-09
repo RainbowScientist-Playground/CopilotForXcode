@@ -3,18 +3,36 @@ import Dependencies
 import Foundation
 import SwiftUI
 
-public enum ToastType {
+public enum ToastLevel {
     case info
     case warning
+    case danger
     case error
+    
+    var icon: String {
+        switch self {
+        case .warning: return "exclamationmark.circle.fill"
+        case .danger: return "exclamationmark.circle.fill"
+        case .error: return "xmark.circle.fill"
+        case .info: return "exclamationmark.triangle.fill"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .warning: return Color(nsColor: .systemOrange)
+        case .danger, .error: return Color(nsColor: .systemRed)
+        case .info: return Color.accentColor
+        }
+    }
 }
 
 public struct ToastKey: EnvironmentKey {
-    public static var defaultValue: (String, ToastType) -> Void = { _, _ in }
+    public static var defaultValue: (String, ToastLevel) -> Void = { _, _ in }
 }
 
 public extension EnvironmentValues {
-    var toast: (String, ToastType) -> Void {
+    var toast: (String, ToastLevel) -> Void {
         get { self[ToastKey.self] }
         set { self[ToastKey.self] = newValue }
     }
@@ -30,31 +48,79 @@ public extension DependencyValues {
         set { self[ToastControllerDependencyKey.self] = newValue }
     }
 
-    var toast: (String, ToastType) -> Void {
-        return { content, type in
-            toastController.toast(content: content, type: type, namespace: nil)
+    var toast: (String, ToastLevel) -> Void {
+        return { content, level in
+            toastController.toast(content: content, level: level, namespace: nil)
         }
     }
 
-    var namespacedToast: (String, ToastType, String) -> Void {
+    var namespacedToast: (String, ToastLevel, String) -> Void {
         return {
-            content, type, namespace in
-            toastController.toast(content: content, type: type, namespace: namespace)
+            content, level, namespace in
+            toastController.toast(content: content, level: level, namespace: namespace)
         }
+    }
+    
+    var persistentToast: (String, String, ToastLevel) -> Void {
+        return { title, content, level in
+            toastController.toast(title: title, content: content, level: level, namespace: nil)
+        }
+    }
+}
+
+public struct ToastButton: Equatable {
+    public let title: String
+    public let action: () -> Void
+
+    public init(title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+    
+    public static func ==(lhs: ToastButton, rhs: ToastButton) -> Bool {
+        lhs.title == rhs.title
     }
 }
 
 public class ToastController: ObservableObject {
     public struct Message: Identifiable, Equatable {
         public var namespace: String?
+        public var title: String?
         public var id: UUID
-        public var type: ToastType
+        public var level: ToastLevel
         public var content: Text
-        public init(id: UUID, type: ToastType, namespace: String? = nil, content: Text) {
-            self.namespace = namespace
+        public var button: ToastButton?
+
+        // Convenience initializer for auto-dismissing messages (no title, no button)
+        public init(
+            id: UUID = UUID(),
+            level: ToastLevel,
+            namespace: String? = nil,
+            content: Text
+        ) {
             self.id = id
-            self.type = type
+            self.level = level
+            self.namespace = namespace
+            self.title = nil
             self.content = content
+            self.button = nil
+        }
+
+        // Convenience initializer for persistent messages (title is required)
+        public init(
+            id: UUID = UUID(),
+            level: ToastLevel,
+            namespace: String? = nil,
+            title: String,
+            content: Text,
+            button: ToastButton? = nil
+        ) {
+            self.id = id
+            self.level = level
+            self.namespace = namespace
+            self.title = title
+            self.content = content
+            self.button = button
         }
     }
 
@@ -64,19 +130,64 @@ public class ToastController: ObservableObject {
         self.messages = messages
     }
 
-    public func toast(content: String, type: ToastType, namespace: String? = nil) {
-        let id = UUID()
-        let message = Message(id: id, type: type, namespace: namespace, content: Text(content))
+    @MainActor
+    private func removeMessageWithAnimation(withId id: UUID) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            messages.removeAll { $0.id == id }
+        }
+    }
 
+    private func showMessage(_ message: Message, autoDismissDelay: UInt64?) {
         Task { @MainActor in
             withAnimation(.easeInOut(duration: 0.2)) {
                 messages.append(message)
                 messages = messages.suffix(3)
             }
-            try await Task.sleep(nanoseconds: 4_000_000_000)
-            withAnimation(.easeInOut(duration: 0.2)) {
-                messages.removeAll { $0.id == id }
+            if let autoDismissDelay = autoDismissDelay {
+                try await Task.sleep(nanoseconds: autoDismissDelay)
+                removeMessageWithAnimation(withId: message.id)
             }
+        }
+    }
+
+    // Auto-dismissing toast (title and button are not allowed)
+    public func toast(
+        content: String,
+        level: ToastLevel,
+        namespace: String? = nil
+    ) {
+        let message = Message(level: level, namespace: namespace, content: Text(content))
+        showMessage(message, autoDismissDelay: 4_000_000_000)
+    }
+
+    // Persistent toast (title is required, button is optional)
+    public func toast(
+        title: String,
+        content: String,
+        level: ToastLevel,
+        namespace: String? = nil,
+        button: ToastButton? = nil
+    ) {
+        // Support markdown in persistent toasts
+        let contentText: Text
+        if let attributedString = try? AttributedString(markdown: content) {
+            contentText = Text(attributedString)
+        } else {
+            contentText = Text(content)
+        }
+        let message = Message(
+            level: level,
+            namespace: namespace,
+            title: title,
+            content: contentText,
+            button: button
+        )
+        showMessage(message, autoDismissDelay: nil)
+    }
+    
+    public func dismissMessage(withId id: UUID) {
+        Task { @MainActor in
+            removeMessageWithAnimation(withId: id)
         }
     }
 }
@@ -98,7 +209,8 @@ public struct Toast {
     public enum Action: Equatable {
         case start
         case updateMessages([Message])
-        case toast(String, ToastType, String?)
+        case toast(String, ToastLevel, String?)
+        case toastPersistent(String, String, ToastLevel, String?, ToastButton?)
     }
 
     @Dependency(\.toastController) var toastController
@@ -130,11 +242,86 @@ public struct Toast {
             case let .updateMessages(messages):
                 state.messages = messages
                 return .none
-            case let .toast(content, type, namespace):
-                toastController.toast(content: content, type: type, namespace: namespace)
+            case let .toast(content, level, namespace):
+                toastController.toast(content: content, level: level, namespace: namespace)
+                return .none
+            case let .toastPersistent(title, content, level, namespace, button):
+                toastController
+                    .toast(
+                        title: title,
+                        content: content,
+                        level: level,
+                        namespace: namespace,
+                        button: button
+                    )
                 return .none
             }
         }
     }
 }
 
+public extension NSWorkspace {
+    /// Opens the System Preferences/Settings app at the Extensions pane
+    /// - Parameter extensionPointIdentifier: Optional identifier for specific extension type
+    static func openExtensionsPreferences(extensionPointIdentifier: String? = nil) {
+        if #available(macOS 13.0, *) {
+            var urlString = "x-apple.systempreferences:com.apple.ExtensionsPreferences"
+            if let extensionPointIdentifier = extensionPointIdentifier {
+                urlString += "?extensionPointIdentifier=\(extensionPointIdentifier)"
+            }
+            NSWorkspace.shared.open(URL(string: urlString)!)
+        } else {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = [
+                "-b",
+                "com.apple.systempreferences",
+                "/System/Library/PreferencePanes/Extensions.prefPane"
+            ]
+            
+            do {
+                try process.run()
+            } catch {
+                // Handle error silently
+                return
+            }
+        }
+    }
+    
+    /// Opens the Xcode Extensions preferences directly
+    static func openXcodeExtensionsPreferences() {
+        openExtensionsPreferences(extensionPointIdentifier: "com.apple.dt.Xcode.extension.source-editor")
+    }
+    
+    static func restartXcode() {
+        // Find current Xcode path before quitting
+        var xcodeURL: URL?
+        
+        // Get currently running Xcode application URL
+        if let xcodeApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.dt.Xcode" }) {
+            xcodeURL = xcodeApp.bundleURL
+        }
+        
+        // Fallback to standard path if we couldn't get the running instance
+        if xcodeURL == nil {
+            let standardPath = "/Applications/Xcode.app"
+            if FileManager.default.fileExists(atPath: standardPath) {
+                xcodeURL = URL(fileURLWithPath: standardPath)
+            }
+        }
+
+        // Restart if we found a valid path
+        if let xcodeURL = xcodeURL {
+            // Quit Xcode
+            let script = NSAppleScript(source: "tell application \"Xcode\" to quit")
+            script?.executeAndReturnError(nil)
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                NSWorkspace.shared.openApplication(
+                    at: xcodeURL,
+                    configuration: NSWorkspace.OpenConfiguration()
+                )
+            }
+        }
+    }
+}

@@ -86,10 +86,13 @@ struct AsyncCodeBlockView: View {
             Group {
                 if let highlighted = storage.highlighted {
                     Text(highlighted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     Text(content).font(.init(font))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .frame(maxWidth: .infinity)
             .onAppear {
                 storage.highlight(debounce: false, for: self)
             }

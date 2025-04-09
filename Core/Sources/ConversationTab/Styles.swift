@@ -42,14 +42,16 @@ extension View {
                 FontFamilyVariant(.monospaced)
                 FontSize(.em(0.85))
             }
-            .padding(16)
-            .padding(.top, 14)
+            .padding(.leading, 8)
+            .padding(.top, 24)
+            .padding(.bottom, 8)
     }
 
     func codeBlockStyle(
         _ configuration: CodeBlockConfiguration,
         backgroundColor: Color,
-        labelColor: Color
+        labelColor: Color,
+        insertAction: (() -> Void)? = nil
     ) -> some View {
         background(backgroundColor)
             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -61,16 +63,27 @@ extension View {
                         .padding(.leading, 8)
                         .lineLimit(1)
                     Spacer()
-                    CopyButton {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(configuration.content, forType: .string)
+                    
+                    HStack(spacing: 4) {
+                        CopyButton {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(configuration.content, forType: .string)
+                        }
+                        
+                        InsertButton {
+                            if let insertAction = insertAction {
+                                insertAction()
+                            }
+                        }
                     }
                 }
+                .padding(.trailing, 8)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.05), lineWidth: 1)
             }
             .markdownMargin(top: 4, bottom: 16)
+            .frame(maxWidth: .infinity)
     }
 }
 
@@ -162,6 +175,14 @@ struct RoundedCorners: Shape {
             )
             path.closeSubpath()
         }
+    }
+}
+
+// Chat Message Styles
+extension View {
+    func chatMessageHeaderTextStyle() -> some View {
+        // semibold -> 600
+        font(.system(size: 13, weight: .semibold))
     }
 }
 

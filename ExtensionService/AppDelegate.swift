@@ -13,6 +13,8 @@ import UserDefaultsObserver
 import UserNotifications
 import XcodeInspector
 import XPCShared
+import GitHubCopilotViewModel
+import StatusBarItemView
 
 let bundleIdentifierBase = Bundle.main
     .object(forInfoDictionaryKey: "BUNDLE_IDENTIFIER_BASE") as! String
@@ -31,8 +33,16 @@ class ExtensionUpdateCheckerDelegate: UpdateCheckerDelegate {
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let service = Service.shared
     var statusBarItem: NSStatusItem!
-    var statusMenuItem: NSMenuItem!
-    var authMenuItem: NSMenuItem!
+    var axStatusItem: NSMenuItem!
+    var extensionStatusItem: NSMenuItem!
+    var openCopilotForXcodeItem: NSMenuItem!
+    var accountItem: NSMenuItem!
+    var authStatusItem: NSMenuItem!
+    var upSellItem: NSMenuItem!
+    var toggleCompletions: NSMenuItem!
+    var toggleIgnoreLanguage: NSMenuItem!
+    var openChat: NSMenuItem!
+    var signOutItem: NSMenuItem!
     var xpcController: XPCController?
     let updateChecker =
         UpdateChecker(
@@ -60,6 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         watchAXStatus()
         watchAuthStatus()
         setInitialStatusBarStatus()
+        UserDefaults.shared.set(false, for: \.clsWarningDismissedUntilRelaunch)
     }
 
     @objc func quit() {
@@ -77,6 +88,44 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         task.arguments = [appPath.absoluteString]
         task.launch()
         task.waitUntilExit()
+    }
+    
+    @objc func signIntoGitHub() {
+        Task { @MainActor in
+            let viewModel = GitHubCopilotViewModel.shared
+            // Don't trigger the shared viewModel's alert
+            do {
+                guard let signInResponse = try await viewModel.preSignIn() else {
+                    return
+                }
+
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.messageText = signInResponse.userCode
+                alert.informativeText = """
+                Please enter the above code in the GitHub website to authorize your \
+                GitHub account with Copilot for Xcode.
+                \(signInResponse.verificationURL.absoluteString)
+                """
+                alert.addButton(withTitle: "Copy Code and Open")
+                alert.addButton(withTitle: "Cancel")
+
+                let response = alert.runModal()
+                if response == .alertFirstButtonReturn {
+                    viewModel.signInResponse = signInResponse
+                    viewModel.copyAndOpen()
+                }
+            } catch {
+                Logger.service.error("GitHub copilot view model Sign in fails: \(error)")
+            }
+        }
+    }
+    
+    @objc func signOutGitHub() {
+        Task { @MainActor in
+            let viewModel = GitHubCopilotViewModel.shared
+            viewModel.signOut()
+        }
     }
 
     @objc func openGlobalChat() {
@@ -210,20 +259,150 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Logger.service.error("Failed to read auth status: \(error)")
         }
     }
+    
+    private func configureNotLoggedIn() {
+        self.accountItem.view = AccountItemView(
+            target: self,
+            action: #selector(signIntoGitHub)
+        )
+        self.authStatusItem.isHidden = true
+        self.upSellItem.isHidden = true
+        self.toggleCompletions.isHidden = true
+        self.toggleIgnoreLanguage.isHidden = true
+        self.signOutItem.isHidden = true
+    }
+
+    private func configureLoggedIn(status: StatusResponse) {
+        self.accountItem.view = AccountItemView(
+            target: self,
+            action: nil,
+            userName: status.userName ?? ""
+        )
+        if !status.clsMessage.isEmpty {
+            self.authStatusItem.isHidden = false
+            let CLSMessageSummary = getCLSMessageSummary(status.clsMessage)
+            self.authStatusItem.title = CLSMessageSummary.summary
+            
+            let submenu = NSMenu()
+            let attributedCLSErrorItem = NSMenuItem()
+            attributedCLSErrorItem.view = ErrorMessageView(
+                errorMessage: CLSMessageSummary.detail
+            )
+            submenu.addItem(attributedCLSErrorItem)
+            submenu.addItem(.separator())
+            submenu.addItem(
+                NSMenuItem(
+                    title: "View Details on GitHub",
+                    action: #selector(openGitHubDetailsLink),
+                    keyEquivalent: ""
+                )
+            )
+            
+            self.authStatusItem.submenu = submenu
+            self.authStatusItem.isEnabled = true
+            
+            self.upSellItem.title = "Upgrade Now"
+            self.upSellItem.isHidden = false
+            self.upSellItem.isEnabled = true
+        } else {
+            self.authStatusItem.isHidden = true
+            self.upSellItem.isHidden = true
+        }
+        self.toggleCompletions.isHidden = false
+        self.toggleIgnoreLanguage.isHidden = false
+        self.signOutItem.isHidden = false
+    }
+
+    private func configureNotAuthorized(status: StatusResponse) {
+        self.accountItem.view = AccountItemView(
+            target: self,
+            action: nil,
+            userName: status.userName ?? ""
+        )
+        self.authStatusItem.isHidden = false
+        self.authStatusItem.title = "No Subscription"
+        
+        let submenu = NSMenu()
+        let attributedNotAuthorizedItem = NSMenuItem()
+        attributedNotAuthorizedItem.view = ErrorMessageView(
+            errorMessage: "GitHub Copilot features are disabled. Check your subscription to enable them."
+        )
+        attributedNotAuthorizedItem.isEnabled = true
+        submenu.addItem(attributedNotAuthorizedItem)
+        
+        self.authStatusItem.submenu = submenu
+        self.authStatusItem.isEnabled = true
+        
+        self.upSellItem.title = "Check Subscription Plans"
+        self.upSellItem.isHidden = false
+        self.upSellItem.isEnabled = true
+        self.toggleCompletions.isHidden = true
+        self.toggleIgnoreLanguage.isHidden = true
+        self.signOutItem.isHidden = false
+    }
+
+    private func configureUnknown() {
+        self.accountItem.view = AccountItemView(
+            target: self,
+            action: nil,
+            userName: "Unknown User"
+        )
+        self.authStatusItem.isHidden = true
+        self.upSellItem.isHidden = true
+        self.toggleCompletions.isHidden = false
+        self.toggleIgnoreLanguage.isHidden = false
+        self.signOutItem.isHidden = false
+    }
 
     func updateStatusBarItem() {
         Task { @MainActor in
             let status = await Status.shared.getStatus()
-            let image = status.icon.nsImage
-            self.statusBarItem.button?.image = image
-            self.authMenuItem.title = status.authMessage
+            /// Update status bar icon
+            self.statusBarItem.button?.image = status.icon.nsImage
+            
+            /// Update auth status related status bar items
+            switch status.authStatus {
+            case .notLoggedIn: configureNotLoggedIn()
+            case .loggedIn: configureLoggedIn(status: status)
+            case .notAuthorized: configureNotAuthorized(status: status)
+            case .unknown: configureUnknown()
+            }
+            
+            /// Update accessibility permission status bar item
+            let exclamationmarkImage = NSImage(
+                systemSymbolName: "exclamationmark.circle.fill",
+                accessibilityDescription: "Permission not granted"
+            )
+            exclamationmarkImage?.isTemplate = false
+            exclamationmarkImage?.withSymbolConfiguration(.init(paletteColors: [.red]))
+            
             if let message = status.message {
-                // TODO switch to attributedTitle to enable line breaks and color.
-                self.statusMenuItem.title = message
-                self.statusMenuItem.isHidden = false
-                self.statusMenuItem.isEnabled = status.url != nil
+                self.axStatusItem.title = message
+                if let image = exclamationmarkImage {
+                    self.axStatusItem.image = image
+                }
+                self.axStatusItem.isHidden = false
+                self.axStatusItem.isEnabled = status.url != nil
             } else {
-                self.statusMenuItem.isHidden = true
+                self.axStatusItem.isHidden = true
+            }
+            
+            /// Update settings status bar item
+            if status.extensionStatus == .disabled || status.extensionStatus == .notGranted {
+                if let image = exclamationmarkImage{
+                    if #available(macOS 15.0, *){
+                        self.extensionStatusItem.image = image
+                        self.extensionStatusItem.title = status.extensionStatus == .notGranted ? "Enable extension for full-featured completion" : "Quit and restart Xcode to enable extension"
+                        self.extensionStatusItem.isHidden = false
+                        self.extensionStatusItem.isEnabled = status.extensionStatus == .notGranted
+                    } else {
+                        self.extensionStatusItem.isHidden = true
+                        self.openCopilotForXcodeItem.image = image
+                    }
+                }
+            } else {
+                self.openCopilotForXcodeItem.image = nil
+                self.extensionStatusItem.isHidden = true
             }
             self.markAsProcessing(status.inProgress)
         }
@@ -250,6 +429,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusBarItem.button?.image = nil
         progressView = progress
     }
+    
+    @objc func openGitHubDetailsLink() {
+        Task {
+            if let url = URL(string: "https://github.com/copilot") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
 }
 
 extension NSRunningApplication {
@@ -275,3 +462,35 @@ func locateHostBundleURL(url: URL) -> URL {
     return devAppURL
 }
 
+struct CLSMessage {
+    let summary: String
+    let detail: String
+}
+
+func extractDateFromCLSMessage(_ message: String) -> String? {
+    let pattern = #"until (\d{1,2}/\d{1,2}/\d{4}, \d{1,2}:\d{2}:\d{2} [AP]M)"#
+    if let range = message.range(of: pattern, options: .regularExpression) {
+        return String(message[range].dropFirst(6))
+    }
+    return nil
+}
+
+func getCLSMessageSummary(_ message: String) -> CLSMessage {
+    let summary: String
+    if message.contains("You've reached your monthly chat messages limit") {
+        summary = "Monthly Chat Limit Reached"
+    } else if message.contains("Completions limit reached") {
+        summary = "Monthly Completion Limit Reached"
+    } else {
+        summary = "CLS Error"
+    }
+    
+    let detail: String
+    if let date = extractDateFromCLSMessage(message) {
+        detail = "Visit GitHub to check your usage and upgrade to Copilot Pro or wait until \(date) for your limit to reset."
+    } else {
+        detail = message
+    }
+    
+    return CLSMessage(summary: summary, detail: detail)
+}

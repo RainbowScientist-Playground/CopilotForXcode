@@ -225,9 +225,9 @@ struct TabContainer_Toasts_Previews: PreviewProvider {
         TabContainer(
             store: .init(initialState: .init(), reducer: { HostApp() }),
             toastController: .init(messages: [
-                .init(id: UUID(), type: .info, content: Text("info")),
-                .init(id: UUID(), type: .error, content: Text("error")),
-                .init(id: UUID(), type: .warning, content: Text("warning")),
+                .init(id: UUID(), level: .info, content: Text("info")),
+                .init(id: UUID(), level: .error, content: Text("error")),
+                .init(id: UUID(), level: .warning, content: Text("warning")),
             ])
         )
         .frame(width: 800)

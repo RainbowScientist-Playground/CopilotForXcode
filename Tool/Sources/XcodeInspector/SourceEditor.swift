@@ -262,7 +262,8 @@ public extension SourceEditor {
         var cursorRange = CursorRange(start: .zero, end: .outOfScope)
         for (i, line) in lines.enumerated() {
             if countS <= range.lowerBound,
-               range.lowerBound < countS + line.utf16.count
+               // when equal, means the cursor is located at the lowerBound
+               range.lowerBound <= countS + line.utf16.count
             {
                 cursorRange.start = .init(line: i, character: range.lowerBound - countS)
             }

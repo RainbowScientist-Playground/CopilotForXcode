@@ -14,6 +14,8 @@ public struct SuggestionPanelFeature {
         var lineHeight: Double = 17
         var isPanelDisplayed: Bool = false
         var isPanelOutOfFrame: Bool = false
+        var warningMessage: String?
+        var warningURL: String?
         var opacity: Double {
             guard isPanelDisplayed else { return 0 }
             if isPanelOutOfFrame { return 0 }
@@ -24,9 +26,19 @@ public struct SuggestionPanelFeature {
 
     public enum Action: Equatable {
         case noAction
+        case dismissWarning
     }
 
     public var body: some ReducerOf<Self> {
-        Reduce { _, _ in .none }
+        Reduce { state, action in
+            switch action {
+            case .dismissWarning:
+                state.warningMessage = nil
+                state.warningURL = nil
+                return .none
+            default:
+                return .none
+            }
+        }
     }
 }

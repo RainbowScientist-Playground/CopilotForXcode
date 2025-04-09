@@ -11,6 +11,7 @@ import Status
 /// We need it because the original one does not allow us to handle custom notifications.
 class CopilotLocalProcessServer {
     public var notificationPublisher: PassthroughSubject<AnyJSONRPCNotification, Never> = PassthroughSubject<AnyJSONRPCNotification, Never>()
+    public var serverRequestPublisher: PassthroughSubject<(AnyJSONRPCRequest, (AnyJSONRPCResponse) -> Void), Never> = PassthroughSubject<(AnyJSONRPCRequest, (AnyJSONRPCResponse) -> Void), Never>()
     
     private let transport: StdioDataTransport
     private let customTransport: CustomDataTransport
@@ -64,6 +65,7 @@ class CopilotLocalProcessServer {
                         } catch {
                             // Handle decoding error
                             print("Error decoding ConversationCreateParams: \(error)")
+                            Logger.gitHubCopilot.error("Error decoding ConversationCreateParams: \(error)")
                         }
                     }
                 }
@@ -76,6 +78,7 @@ class CopilotLocalProcessServer {
                         } catch {
                             // Handle decoding error
                             print("Error decoding TurnCreateParams: \(error)")
+                            Logger.gitHubCopilot.error("Error decoding TurnCreateParams: \(error)")
                         }
                     }
                 }
@@ -84,6 +87,10 @@ class CopilotLocalProcessServer {
         
         wrappedServer?.notificationPublisher.sink(receiveValue: { [weak self] notification in
             self?.notificationPublisher.send(notification)
+        }).store(in: &cancellables)
+        
+        wrappedServer?.serverRequestPublisher.sink(receiveValue: { [weak self] (request, callback) in
+            self?.serverRequestPublisher.send((request, callback))
         }).store(in: &cancellables)
 
         process.standardInput = transport.stdinPipe
@@ -198,6 +205,7 @@ final class CustomJSONRPCLanguageServer: Server {
     public var requestHandler: RequestHandler?
     public var notificationHandler: NotificationHandler?
     public var notificationPublisher: PassthroughSubject<AnyJSONRPCNotification, Never> = PassthroughSubject<AnyJSONRPCNotification, Never>()
+    public var serverRequestPublisher: PassthroughSubject<(AnyJSONRPCRequest, (AnyJSONRPCResponse) -> Void), Never> = PassthroughSubject<(AnyJSONRPCRequest, (AnyJSONRPCResponse) -> Void), Never>()
 
     private var outOfBandError: Error?
 
@@ -278,10 +286,17 @@ extension CustomJSONRPCLanguageServer {
                 Logger.gitHubCopilot.info("\(anyNotification.method): \(debugDescription)")
                 block(nil)
                 return true
-            case "statusNotification":
+            case "didChangeStatus":
                 Logger.gitHubCopilot.info("\(anyNotification.method): \(debugDescription)")
                 if let payload = GitHubCopilotNotification.StatusNotification.decode(fromParams: anyNotification.params) {
-                    Task { await Status.shared.updateCLSStatus(payload.status.clsStatus, message: payload.message) }
+                    Task {
+                        await Status.shared
+                            .updateCLSStatus(
+                                payload.kind.clsStatus,
+                                busy: payload.busy,
+                                message: payload.message
+                            )
+                    }
                 }
                 block(nil)
                 return true
@@ -289,7 +304,7 @@ extension CustomJSONRPCLanguageServer {
                 notificationPublisher.send(anyNotification)
                 block(nil)
                 return true
-            case "conversation/preconditionsNotification":
+            case "conversation/preconditionsNotification", "statusNotification":
                 // Ignore
                 block(nil)
                 return true
@@ -313,6 +328,7 @@ extension CustomJSONRPCLanguageServer {
         data: Data,
         callback: @escaping (AnyJSONRPCResponse) -> Void
     ) -> Bool {
+        serverRequestPublisher.send((request: request, callback: callback))
         return false
     }
 }

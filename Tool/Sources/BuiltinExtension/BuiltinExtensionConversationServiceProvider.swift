@@ -97,4 +97,30 @@ public final class BuiltinExtensionConversationServiceProvider<
         }
         try? await conversationService.copyCode(request: request, workspace: workspaceInfo)
     }
+
+    public func templates() async throws -> [ChatTemplate]? {
+        guard let conversationService else {
+            Logger.service.error("Builtin chat service not found.")
+            return nil
+        }
+        guard let workspaceInfo = await activeWorkspace() else {
+            Logger.service.error("Could not get active workspace info")
+            return nil
+        }
+
+        return (try? await conversationService.templates(workspace: workspaceInfo))
+    }
+
+    public func models() async throws -> [CopilotModel]? {
+        guard let conversationService else {
+            Logger.service.error("Builtin chat service not found.")
+            return nil
+        }
+        guard let workspaceInfo = await activeWorkspace() else {
+            Logger.service.error("Could not get active workspace info")
+            return nil
+        }
+
+        return (try? await conversationService.models(workspace: workspaceInfo))
+    }
 }

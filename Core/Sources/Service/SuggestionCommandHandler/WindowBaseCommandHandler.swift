@@ -431,43 +431,45 @@ extension WindowBaseCommandHandler {
         }.result
     }
 
+    // not used feature
+    // commit it to avoid init error for ChatService
     func executeSingleRoundDialog(
         systemPrompt: String?,
         overwriteSystemPrompt: Bool,
         prompt: String,
         receiveReplyInNotification: Bool
     ) async throws {
-        guard !prompt.isEmpty else { return }
-        let service = ChatService.service()
-
-        let result = try await service.handleSingleRoundDialogCommand(
-            systemPrompt: systemPrompt,
-            overwriteSystemPrompt: overwriteSystemPrompt,
-            prompt: prompt
-        )
-
-        guard receiveReplyInNotification else { return }
-
-        let granted = try await UNUserNotificationCenter.current()
-            .requestAuthorization(options: [.alert])
-
-        if granted {
-            let content = UNMutableNotificationContent()
-            content.title = "Reply"
-            content.body = result
-            let request = UNNotificationRequest(
-                identifier: "reply",
-                content: content,
-                trigger: nil
-            )
-            do {
-                try await UNUserNotificationCenter.current().add(request)
-            } catch {
-                presenter.presentError(error)
-            }
-        } else {
-            presenter.presentErrorMessage("Notification permission is not granted.")
-        }
+//        guard !prompt.isEmpty else { return }
+//        let service = ChatService.service()
+//
+//        let result = try await service.handleSingleRoundDialogCommand(
+//            systemPrompt: systemPrompt,
+//            overwriteSystemPrompt: overwriteSystemPrompt,
+//            prompt: prompt
+//        )
+//
+//        guard receiveReplyInNotification else { return }
+//
+//        let granted = try await UNUserNotificationCenter.current()
+//            .requestAuthorization(options: [.alert])
+//
+//        if granted {
+//            let content = UNMutableNotificationContent()
+//            content.title = "Reply"
+//            content.body = result
+//            let request = UNNotificationRequest(
+//                identifier: "reply",
+//                content: content,
+//                trigger: nil
+//            )
+//            do {
+//                try await UNUserNotificationCenter.current().add(request)
+//            } catch {
+//                presenter.presentError(error)
+//            }
+//        } else {
+//            presenter.presentErrorMessage("Notification permission is not granted.")
+//        }
     }
 }
 
