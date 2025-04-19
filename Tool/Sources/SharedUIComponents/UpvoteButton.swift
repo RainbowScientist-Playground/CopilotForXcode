@@ -19,14 +19,15 @@ public struct UpvoteButton: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 14, height: 14)
-                .frame(width: 20, height: 20, alignment: .center)
+//                .frame(width: 20, height: 20, alignment: .center)
                 .foregroundColor(.secondary)
-                .background(
-                    .regularMaterial,
-                    in: RoundedRectangle(cornerRadius: 4, style: .circular)
-                )
+//                .background(
+//                    .regularMaterial,
+//                    in: RoundedRectangle(cornerRadius: 4, style: .circular)
+//                )
                 .padding(4)
+                .help("Helpful")
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(HoverButtonStyle(padding: 0))
     }
 }

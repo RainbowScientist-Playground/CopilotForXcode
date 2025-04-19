@@ -7,7 +7,7 @@ import Toast
 import UpdateChecker
 
 @MainActor
-let hostAppStore: StoreOf<HostApp> = .init(initialState: .init(), reducer: { HostApp() })
+public let hostAppStore: StoreOf<HostApp> = .init(initialState: .init(), reducer: { HostApp() })
 
 public struct TabContainer: View {
     let store: StoreOf<HostApp>
@@ -225,12 +225,35 @@ struct TabContainer_Toasts_Previews: PreviewProvider {
         TabContainer(
             store: .init(initialState: .init(), reducer: { HostApp() }),
             toastController: .init(messages: [
-                .init(id: UUID(), type: .info, content: Text("info")),
-                .init(id: UUID(), type: .error, content: Text("error")),
-                .init(id: UUID(), type: .warning, content: Text("warning")),
+                .init(id: UUID(), level: .info, content: Text("info")),
+                .init(id: UUID(), level: .error, content: Text("error")),
+                .init(id: UUID(), level: .warning, content: Text("warning")),
             ])
         )
         .frame(width: 800)
     }
 }
 
+@available(macOS 14.0, *)
+@MainActor
+public struct SettingsEnvironment: View {
+    @Environment(\.openSettings) public var openSettings: OpenSettingsAction
+    
+    public init() {}
+    
+    public var body: some View {
+        EmptyView().onAppear {
+            openSettings()
+        }
+    }
+    
+    public func open() {
+        let controller = NSHostingController(rootView: self)
+        let window = NSWindow(contentViewController: controller)
+        window.orderFront(nil)
+        // Close the temporary window after settings are opened
+        DispatchQueue.main.async {
+            window.close()
+        }
+    }
+}

@@ -84,6 +84,10 @@ public final class Filespace {
         return suggestions[suggestionIndex]
     }
 
+    public private(set) var errorMessage: String = "" {
+        didSet { refreshUpdateTime() }
+    }
+
     // MARK: Life Cycle
 
     public var isExpired: Bool {
@@ -167,6 +171,16 @@ public final class Filespace {
     @WorkspaceActor
     public func bumpVersion() {
         version += 1
+    }
+
+    @WorkspaceActor
+    public func setError(_ message: String) {
+        errorMessage = message
+    }
+
+    @WorkspaceActor 
+    public func dismissError() {
+        errorMessage = ""
     }
 }
 

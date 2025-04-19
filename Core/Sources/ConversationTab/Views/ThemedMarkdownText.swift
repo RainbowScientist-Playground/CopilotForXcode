@@ -1,6 +1,10 @@
 import Foundation
 import MarkdownUI
 import SwiftUI
+import ChatService
+import ComposableArchitecture
+import SuggestionBasic
+import ChatTab
 
 struct ThemedMarkdownText: View {
     @AppStorage(\.syncChatCodeHighlightTheme) var syncCodeHighlightTheme
@@ -13,9 +17,11 @@ struct ThemedMarkdownText: View {
     @Environment(\.colorScheme) var colorScheme
 
     let text: String
+    let chat: StoreOf<Chat>
 
-    init(_ text: String) {
+    init(text: String, chat: StoreOf<Chat>) {
         self.text = text
+        self.chat = chat
     }
 
     var body: some View {
@@ -46,7 +52,8 @@ struct ThemedMarkdownText: View {
                         }
                     }
                     return Color.secondary.opacity(0.7)
-                }()
+                }(),
+                chat: chat
             ))
     }
 }
@@ -58,7 +65,8 @@ extension MarkdownUI.Theme {
         fontSize: Double,
         codeFont: NSFont,
         codeBlockBackgroundColor: Color,
-        codeBlockLabelColor: Color
+        codeBlockLabelColor: Color,
+        chat: StoreOf<Chat>
     ) -> MarkdownUI.Theme {
         .gitHub.text {
             ForegroundColor(.primary)
@@ -66,37 +74,76 @@ extension MarkdownUI.Theme {
             FontSize(fontSize)
         }
         .codeBlock { configuration in
-            let wrapCode = UserDefaults.shared.value(for: \.wrapCodeInChatCodeBlock)
+            MarkdownCodeBlockView(
+                codeBlockConfiguration: configuration,
+                codeFont: codeFont,
+                codeBlockBackgroundColor: codeBlockBackgroundColor,
+                codeBlockLabelColor: codeBlockLabelColor,
+                chat: chat
+            )
+        }
+    }
+}
 
-            if wrapCode {
+struct MarkdownCodeBlockView: View {
+    let codeBlockConfiguration: CodeBlockConfiguration
+    let codeFont: NSFont
+    let codeBlockBackgroundColor: Color
+    let codeBlockLabelColor: Color
+    let chat: StoreOf<Chat>
+    
+    func insertCode() {
+        chat.send(.insertCode(codeBlockConfiguration.content))
+    }
+    
+    var body: some View {
+        let wrapCode = UserDefaults.shared.value(for: \.wrapCodeInChatCodeBlock)
+
+        if wrapCode {
+            AsyncCodeBlockView(
+                fenceInfo: codeBlockConfiguration.language,
+                content: codeBlockConfiguration.content,
+                font: codeFont
+            )
+            .codeBlockLabelStyle()
+            .codeBlockStyle(
+                codeBlockConfiguration,
+                backgroundColor: codeBlockBackgroundColor,
+                labelColor: codeBlockLabelColor,
+                insertAction: insertCode
+            )
+        } else {
+            ScrollView(.horizontal) {
                 AsyncCodeBlockView(
-                    fenceInfo: configuration.language,
-                    content: configuration.content,
+                    fenceInfo: codeBlockConfiguration.language,
+                    content: codeBlockConfiguration.content,
                     font: codeFont
                 )
                 .codeBlockLabelStyle()
-                .codeBlockStyle(
-                    configuration,
-                    backgroundColor: codeBlockBackgroundColor,
-                    labelColor: codeBlockLabelColor
-                )
-            } else {
-                ScrollView(.horizontal) {
-                    AsyncCodeBlockView(
-                        fenceInfo: configuration.language,
-                        content: configuration.content,
-                        font: codeFont
-                    )
-                    .codeBlockLabelStyle()
-                }
-                .workaroundForVerticalScrollingBugInMacOS()
-                .codeBlockStyle(
-                    configuration,
-                    backgroundColor: codeBlockBackgroundColor,
-                    labelColor: codeBlockLabelColor
-                )
             }
+            .workaroundForVerticalScrollingBugInMacOS()
+            .codeBlockStyle(
+                codeBlockConfiguration,
+                backgroundColor: codeBlockBackgroundColor,
+                labelColor: codeBlockLabelColor,
+                insertAction: insertCode
+            )
         }
+    }
+}
+
+struct ThemedMarkdownText_Previews: PreviewProvider {
+    static var previews: some View {
+        let chatTabInfo = ChatTabInfo(id: "id", workspacePath: "path", username: "name")
+        ThemedMarkdownText(
+            text:"""
+    ```swift
+    let sumClosure: (Int, Int) -> Int = { (a: Int, b: Int) in
+        return a + b
+    }
+    ```
+    """,
+            chat: .init(initialState: .init(), reducer: { Chat(service: ChatService.service(for: chatTabInfo)) }))
     }
 }
 

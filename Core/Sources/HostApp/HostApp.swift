@@ -8,13 +8,13 @@ extension KeyboardShortcuts.Name {
 }
 
 @Reducer
-struct HostApp {
+public struct HostApp {
     @ObservableState
-    struct State: Equatable {
+    public struct State: Equatable {
         var general = General.State()
     }
 
-    enum Action: Equatable {
+    public enum Action: Equatable {
         case appear
         case general(General.Action)
     }
@@ -25,7 +25,7 @@ struct HostApp {
         KeyboardShortcuts.userDefaults = .shared
     }
 
-    var body: some ReducerOf<Self> {
+    public var body: some ReducerOf<Self> {
         Scope(state: \.general, action: /Action.general) {
             General()
         }

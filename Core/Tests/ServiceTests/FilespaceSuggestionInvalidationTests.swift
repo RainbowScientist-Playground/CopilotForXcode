@@ -19,8 +19,11 @@ class FilespaceSuggestionInvalidationTests: XCTestCase {
         range: CursorRange = .init(startPair: (1, 0), endPair: (1, 0))
     ) async throws -> (Filespace, FilespaceSuggestionSnapshot) {
         let pool = WorkspacePool()
-        let (_, filespace) = try await pool
-            .fetchOrCreateWorkspaceAndFilespace(fileURL: URL(fileURLWithPath: "file/path/to.swift"))
+        let filespace = Filespace(
+                fileURL: URL(fileURLWithPath: "file/path/to.swift"),
+                onSave: { _ in },
+                onClose: { _ in }
+            )
         filespace.suggestions = [
             .init(
                 id: "",

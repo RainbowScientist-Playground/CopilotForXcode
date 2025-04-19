@@ -11,6 +11,7 @@
 		3ABBEA2B2C8BA00300C61D61 /* copilot-language-server-arm64 in Resources */ = {isa = PBXBuildFile; fileRef = 3ABBEA2A2C8BA00300C61D61 /* copilot-language-server-arm64 */; };
 		3ABBEA2C2C8BA00800C61D61 /* copilot-language-server-arm64 in Resources */ = {isa = PBXBuildFile; fileRef = 3ABBEA2A2C8BA00300C61D61 /* copilot-language-server-arm64 */; };
 		3ABBEA2D2C8BA00B00C61D61 /* copilot-language-server in Resources */ = {isa = PBXBuildFile; fileRef = 3ABBEA282C8B9FE100C61D61 /* copilot-language-server */; };
+		3E5DB7502D6B8FA500418952 /* ReleaseNotes.md in Resources */ = {isa = PBXBuildFile; fileRef = 3E5DB74F2D6B88EE00418952 /* ReleaseNotes.md */; };
 		424ACA212CA4697200FA20F2 /* Credits.rtf in Resources */ = {isa = PBXBuildFile; fileRef = 424ACA202CA4697200FA20F2 /* Credits.rtf */; };
 		427C63282C6E868B000E557C /* OpenSettingsCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427C63272C6E868B000E557C /* OpenSettingsCommand.swift */; };
 		5EC511E32C90CE7400632BAB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C8189B1D2938973000C9DCDA /* Assets.xcassets */; };
@@ -189,6 +190,7 @@
 /* Begin PBXFileReference section */
 		3ABBEA282C8B9FE100C61D61 /* copilot-language-server */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "copilot-language-server"; path = "Server/node_modules/@github/copilot-language-server/native/darwin-x64/copilot-language-server"; sourceTree = SOURCE_ROOT; };
 		3ABBEA2A2C8BA00300C61D61 /* copilot-language-server-arm64 */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "copilot-language-server-arm64"; path = "Server/node_modules/@github/copilot-language-server/native/darwin-arm64/copilot-language-server-arm64"; sourceTree = SOURCE_ROOT; };
+		3E5DB74F2D6B88EE00418952 /* ReleaseNotes.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ReleaseNotes.md; sourceTree = "<group>"; };
 		424ACA202CA4697200FA20F2 /* Credits.rtf */ = {isa = PBXFileReference; lastKnownFileType = text.rtf; path = Credits.rtf; sourceTree = "<group>"; };
 		427C63272C6E868B000E557C /* OpenSettingsCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenSettingsCommand.swift; sourceTree = "<group>"; };
 		C8009BFE2941C551007AA7E8 /* ToggleRealtimeSuggestionsCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToggleRealtimeSuggestionsCommand.swift; sourceTree = "<group>"; };
@@ -345,6 +347,7 @@
 		C8189B0D2938972F00C9DCDA = {
 			isa = PBXGroup;
 			children = (
+				3E5DB74F2D6B88EE00418952 /* ReleaseNotes.md */,
 				C887BC832965D96000931567 /* DEVELOPMENT.md */,
 				C8520308293D805800460097 /* README.md */,
 				C8F103292A7A365000D28F4F /* launchAgent.plist */,
@@ -678,6 +681,7 @@
 				C861E6152994F6080056CB02 /* Assets.xcassets in Resources */,
 				3ABBEA2D2C8BA00B00C61D61 /* copilot-language-server in Resources */,
 				C81291D72994FE6900196E12 /* Main.storyboard in Resources */,
+				3E5DB7502D6B8FA500418952 /* ReleaseNotes.md in Resources */,
 				5EC511E42C90CE9800632BAB /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

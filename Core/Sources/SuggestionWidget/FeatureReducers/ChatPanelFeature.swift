@@ -4,6 +4,9 @@ import ChatTab
 import ComposableArchitecture
 import GitHubCopilotService
 import SwiftUI
+import PersistMiddleware
+import ConversationTab
+import HostAppActivator
 
 public enum ChatTabBuilderCollection: Equatable {
     case folder(title: String, kinds: [ChatTabKind])
@@ -23,32 +26,90 @@ public struct ChatTabKind: Equatable {
     }
 }
 
-@Reducer
-public struct ChatPanelFeature {
-    public struct ChatTabGroup: Equatable {
-        public var tabInfo: IdentifiedArray<String, ChatTabInfo>
-        public var tabCollection: [ChatTabBuilderCollection]
-        public var selectedTabId: String?
+public struct WorkspaceIdentifier: Hashable, Codable {
+    public let path: String
+    public let username: String
+    
+    public init(path: String, username: String) {
+        self.path = path
+        self.username = username
+    }
+}
 
-        public var selectedTabInfo: ChatTabInfo? {
-            guard let id = selectedTabId else { return tabInfo.first }
-            return tabInfo[id: id]
-        }
+@ObservableState
+public struct ChatHistory: Equatable {
+    public var workspaces: IdentifiedArray<WorkspaceIdentifier, ChatWorkspace>
+    public var selectedWorkspacePath: String?
+    public var selectedWorkspaceName: String?
+    public var currentUsername: String?
 
-        init(
-            tabInfo: IdentifiedArray<String, ChatTabInfo> = [],
-            tabCollection: [ChatTabBuilderCollection] = [],
-            selectedTabId: String? = nil
-        ) {
-            self.tabInfo = tabInfo
-            self.tabCollection = tabCollection
-            self.selectedTabId = selectedTabId
-        }
+    public var currentChatWorkspace: ChatWorkspace? {
+        guard let id = selectedWorkspacePath,
+              let username = currentUsername
+        else { return workspaces.first }
+        let identifier = WorkspaceIdentifier(path: id, username: username)
+        return workspaces[id: identifier]
     }
 
+    init(workspaces: IdentifiedArray<WorkspaceIdentifier, ChatWorkspace> = [],
+         selectedWorkspacePath: String? = nil,
+         selectedWorkspaceName: String? = nil,
+         currentUsername: String? = nil) {
+        self.workspaces = workspaces
+        self.selectedWorkspacePath = selectedWorkspacePath
+        self.selectedWorkspaceName = selectedWorkspaceName
+        self.currentUsername = currentUsername
+    }
+
+    mutating func updateHistory(_ workspace: ChatWorkspace) {
+        if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
+            workspaces[index] = workspace
+        }
+    }
+    
+    mutating func addWorkspace(_ workspace: ChatWorkspace) {
+        guard !workspaces.contains(where: { $0.id == workspace.id }) else { return }
+        workspaces[id: workspace.id] = workspace
+    }
+}
+
+@ObservableState
+public struct ChatWorkspace: Identifiable, Equatable {
+    public var id: WorkspaceIdentifier
+    public var tabInfo: IdentifiedArray<String, ChatTabInfo>
+    public var tabCollection: [ChatTabBuilderCollection]
+    public var selectedTabId: String?
+
+    public var selectedTabInfo: ChatTabInfo? {
+        guard let tabId = selectedTabId else { return tabInfo.first }
+        return tabInfo[id: tabId]
+    }
+    
+    public var workspacePath: String { get { id.path} }
+    public var username: String { get { id.username } }
+
+    public init(
+        id: WorkspaceIdentifier,
+        tabInfo: IdentifiedArray<String, ChatTabInfo> = [],
+        tabCollection: [ChatTabBuilderCollection] = [],
+        selectedTabId: String? = nil
+    ) {
+        self.id = id
+        self.tabInfo = tabInfo
+        self.tabCollection = tabCollection
+        self.selectedTabId = selectedTabId
+    }
+}
+
+@Reducer
+public struct ChatPanelFeature {
     @ObservableState
     public struct State: Equatable {
-        public var chatTabGroup = ChatTabGroup()
+        public var chatHistory = ChatHistory()
+        public var currentChatWorkspace: ChatWorkspace? {
+            return chatHistory.currentChatWorkspace
+        }
+
         var colorScheme: ColorScheme = .light
         public internal(set) var isPanelDisplayed = false
         var isDetached = false
@@ -65,20 +126,32 @@ public struct ChatPanelFeature {
         case enterFullScreen
         case exitFullScreen
         case presentChatPanel(forceDetach: Bool)
+        case switchWorkspace(String, String, String)
+        case openSettings
 
         // Tabs
-        case updateChatTabInfo(IdentifiedArray<String, ChatTabInfo>)
-        case createNewTapButtonHovered
+        case updateChatHistory(ChatWorkspace)
+//        case updateChatTabInfo(IdentifiedArray<String, ChatTabInfo>)
+//        case createNewTapButtonHovered
         case closeTabButtonClicked(id: String)
         case createNewTapButtonClicked(kind: ChatTabKind?)
         case tabClicked(id: String)
         case appendAndSelectTab(ChatTabInfo)
-        case switchToNextTab
-        case switchToPreviousTab
-        case moveChatTab(from: Int, to: Int)
+        case appendTabToWorkspace(ChatTabInfo, ChatWorkspace)
+//        case switchToNextTab
+//        case switchToPreviousTab
+//        case moveChatTab(from: Int, to: Int)
         case focusActiveChatTab
-
+        
+        // Chat History
+        case chatHistoryItemClicked(id: String)
+        case chatHisotryDeleteButtonClicked(id: String)
         case chatTab(id: String, action: ChatTabItem.Action)
+        
+        // persist
+        case saveChatTabInfo([ChatTabInfo?], ChatWorkspace)
+        case deleteChatTabInfo(id: String, ChatWorkspace)
+        case restoreWorkspace(ChatWorkspace)
     }
 
     @Dependency(\.suggestionWidgetControllerDependency) var suggestionWidgetControllerDependency
@@ -86,6 +159,7 @@ public struct ChatPanelFeature {
     @Dependency(\.activatePreviousActiveXcode) var activatePreviouslyActiveXcode
     @Dependency(\.activateThisApp) var activateExtensionService
     @Dependency(\.chatTabBuilderCollection) var chatTabBuilderCollection
+    @Dependency(\.chatTabPool) var chatTabPool
 
     @MainActor func toggleFullScreen() {
         let window = suggestionWidgetControllerDependency.windowsController?.windows
@@ -111,7 +185,7 @@ public struct ChatPanelFeature {
                 }
 
             case .closeActiveTabClicked:
-                if let id = state.chatTabGroup.selectedTabId {
+                if let id = state.currentChatWorkspace?.selectedTabId {
                     return .run { send in
                         await send(.closeTabButtonClicked(id: id))
                     }
@@ -165,133 +239,336 @@ public struct ChatPanelFeature {
                     activateExtensionService()
                     await send(.focusActiveChatTab)
                 }
-
-            case let .updateChatTabInfo(chatTabInfo):
-                let previousSelectedIndex = state.chatTabGroup.tabInfo
-                    .firstIndex(where: { $0.id == state.chatTabGroup.selectedTabId })
-                state.chatTabGroup.tabInfo = chatTabInfo
-                if !chatTabInfo.contains(where: { $0.id == state.chatTabGroup.selectedTabId }) {
-                    if let previousSelectedIndex {
-                        let proposedSelectedIndex = previousSelectedIndex - 1
-                        if proposedSelectedIndex >= 0,
-                           proposedSelectedIndex < chatTabInfo.endIndex
-                        {
-                            state.chatTabGroup.selectedTabId = chatTabInfo[proposedSelectedIndex].id
-                        } else {
-                            state.chatTabGroup.selectedTabId = chatTabInfo.first?.id
-                        }
-                    } else {
-                        state.chatTabGroup.selectedTabId = nil
-                    }
+            case let .switchWorkspace(path, name, username):
+                state.chatHistory.selectedWorkspacePath = path
+                state.chatHistory.selectedWorkspaceName = name
+                state.chatHistory.currentUsername = username
+                if state.chatHistory.currentChatWorkspace == nil {
+                    let identifier = WorkspaceIdentifier(path: path, username: username)
+                    state.chatHistory.addWorkspace(ChatWorkspace(id: identifier))
                 }
                 return .none
+            case .openSettings:
+                try? launchHostAppSettings()
+                return .none
+            case let .updateChatHistory(chatWorkspace):
+                state.chatHistory.updateHistory(chatWorkspace)
+                return .none
+//            case let .updateChatTabInfo(chatTabInfo):
+//                let previousSelectedIndex = state.chatTabGroup.tabInfo
+//                    .firstIndex(where: { $0.id == state.chatTabGroup.selectedTabId })
+//                state.chatTabGroup.tabInfo = chatTabInfo
+//                if !chatTabInfo.contains(where: { $0.id == state.chatTabGroup.selectedTabId }) {
+//                    if let previousSelectedIndex {
+//                        let proposedSelectedIndex = previousSelectedIndex - 1
+//                        if proposedSelectedIndex >= 0,
+//                           proposedSelectedIndex < chatTabInfo.endIndex
+//                        {
+//                            state.chatTabGroup.selectedTabId = chatTabInfo[proposedSelectedIndex].id
+//                        } else {
+//                            state.chatTabGroup.selectedTabId = chatTabInfo.first?.id
+//                        }
+//                    } else {
+//                        state.chatTabGroup.selectedTabId = nil
+//                    }
+//                }
+//                return .none
 
             case let .closeTabButtonClicked(id):
-                let firstIndex = state.chatTabGroup.tabInfo.firstIndex { $0.id == id }
+                guard var currentChatWorkspace = state.currentChatWorkspace else {
+                    return .none
+                }
+                let firstIndex = currentChatWorkspace.tabInfo.firstIndex { $0.id == id }
                 let nextIndex = {
                     guard let firstIndex else { return 0 }
                     let nextIndex = firstIndex - 1
                     return max(nextIndex, 0)
                 }()
-                state.chatTabGroup.tabInfo.removeAll { $0.id == id }
-                if state.chatTabGroup.tabInfo.isEmpty {
+                currentChatWorkspace.tabInfo.removeAll { $0.id == id }
+                if currentChatWorkspace.tabInfo.isEmpty {
                     state.isPanelDisplayed = false
                 }
-                if nextIndex < state.chatTabGroup.tabInfo.count {
-                    state.chatTabGroup.selectedTabId = state.chatTabGroup.tabInfo[nextIndex].id
+                if nextIndex < currentChatWorkspace.tabInfo.count {
+                    currentChatWorkspace.selectedTabId = currentChatWorkspace.tabInfo[nextIndex].id
                 } else {
-                    state.chatTabGroup.selectedTabId = nil
+                    currentChatWorkspace.selectedTabId = nil
                 }
+                state.chatHistory.updateHistory(currentChatWorkspace)
                 return .none
+            
+            case let .chatHisotryDeleteButtonClicked(id):
+                // the current chat should not be deleted
+                guard var currentChatWorkspace = state.currentChatWorkspace, id != currentChatWorkspace.selectedTabId else {
+                    return .none
+                }
+                currentChatWorkspace.tabInfo.removeAll { $0.id == id }
+                state.chatHistory.updateHistory(currentChatWorkspace)
+                
+                let chatWorkspace = currentChatWorkspace
+                return .run { send in
+                    await send(.deleteChatTabInfo(id: id, chatWorkspace))
+                }
 
-            case .createNewTapButtonHovered:
-                state.chatTabGroup.tabCollection = chatTabBuilderCollection()
-                return .none
+//            case .createNewTapButtonHovered:
+//                state.chatTabGroup.tabCollection = chatTabBuilderCollection()
+//                return .none
 
             case .createNewTapButtonClicked:
                 return .none // handled elsewhere
 
             case let .tabClicked(id):
-                guard state.chatTabGroup.tabInfo.contains(where: { $0.id == id }) else {
-                    state.chatTabGroup.selectedTabId = nil
+                guard var currentChatWorkspace = state.currentChatWorkspace,
+                      var chatTabInfo = currentChatWorkspace.tabInfo.first(where: { $0.id == id }) else {
+//                    chatTabGroup.selectedTabId = nil
                     return .none
                 }
-                state.chatTabGroup.selectedTabId = id
+                
+                let (originalTab, currentTab) = currentChatWorkspace.switchTab(to: &chatTabInfo)
+                state.chatHistory.updateHistory(currentChatWorkspace)
+                
+                let workspace = currentChatWorkspace
                 return .run { send in
                     await send(.focusActiveChatTab)
+                    await send(.saveChatTabInfo([originalTab, currentTab], workspace))
                 }
-
-            case let .appendAndSelectTab(tab):
-                guard !state.chatTabGroup.tabInfo.contains(where: { $0.id == tab.id })
-                else { return .none }
-                state.chatTabGroup.tabInfo.append(tab)
-                state.chatTabGroup.selectedTabId = tab.id
-                return .run { send in
-                    await send(.focusActiveChatTab)
-                }
-
-            case .switchToNextTab:
-                let selectedId = state.chatTabGroup.selectedTabId
-                guard let index = state.chatTabGroup.tabInfo
-                    .firstIndex(where: { $0.id == selectedId })
-                else { return .none }
-                let nextIndex = index + 1
-                if nextIndex >= state.chatTabGroup.tabInfo.endIndex {
-                    return .none
-                }
-                let targetId = state.chatTabGroup.tabInfo[nextIndex].id
-                state.chatTabGroup.selectedTabId = targetId
-                return .run { send in
-                    await send(.focusActiveChatTab)
-                }
-
-            case .switchToPreviousTab:
-                let selectedId = state.chatTabGroup.selectedTabId
-                guard let index = state.chatTabGroup.tabInfo
-                    .firstIndex(where: { $0.id == selectedId })
-                else { return .none }
-                let previousIndex = index - 1
-                if previousIndex < 0 || previousIndex >= state.chatTabGroup.tabInfo.endIndex {
-                    return .none
-                }
-                let targetId = state.chatTabGroup.tabInfo[previousIndex].id
-                state.chatTabGroup.selectedTabId = targetId
-                return .run { send in
-                    await send(.focusActiveChatTab)
-                }
-
-            case let .moveChatTab(from, to):
-                guard from >= 0, from < state.chatTabGroup.tabInfo.endIndex, to >= 0,
-                      to <= state.chatTabGroup.tabInfo.endIndex
+                
+            case let .chatHistoryItemClicked(id):
+                guard var chatWorkspace = state.currentChatWorkspace,
+                      var chatTabInfo = chatWorkspace.tabInfo.first(where: { $0.id == id }),
+                      // No Need to swicth selected Tab when already selected
+                      id != chatWorkspace.selectedTabId
                 else {
+//                    state.chatGroupCollection.selectedChatGroup?.selectedTabId = nil
                     return .none
                 }
-                let tab = state.chatTabGroup.tabInfo[from]
-                state.chatTabGroup.tabInfo.remove(at: from)
-                state.chatTabGroup.tabInfo.insert(tab, at: to)
-                return .none
+                let (originalTab, currentTab) = chatWorkspace.switchTab(to: &chatTabInfo)
+                state.chatHistory.updateHistory(chatWorkspace)
+                
+                let currentChatWorkspace = chatWorkspace
+                return .run { send in
+                    // as converstaion tab is lazy restore
+                    // should restore tab when switching
+                    if let chatTab = chatTabPool.getTab(of: id),
+                       let conversationTab = chatTab as? ConversationTab {
+                        await conversationTab.restoreIfNeeded()
+                    }
+                    
+                    await send(.focusActiveChatTab)
+                    await send(.saveChatTabInfo([originalTab, currentTab], currentChatWorkspace))
+                }
+
+            case var .appendAndSelectTab(tab):
+                guard var chatWorkspace = state.currentChatWorkspace,
+                        !chatWorkspace.tabInfo.contains(where: { $0.id == tab.id })
+                else { return .none }
+                
+                chatWorkspace.tabInfo.append(tab)
+                let (originalTab, currentTab) = chatWorkspace.switchTab(to: &tab)
+                state.chatHistory.updateHistory(chatWorkspace)
+                
+                let currentChatWorkspace = chatWorkspace
+                return .run { send in
+                    await send(.focusActiveChatTab)
+                    await send(.saveChatTabInfo([originalTab, currentTab], currentChatWorkspace))
+                }
+            case .appendTabToWorkspace(var tab, let chatWorkspace):
+                guard !chatWorkspace.tabInfo.contains(where: { $0.id == tab.id })
+                else { return .none }
+                var targetWorkspace = chatWorkspace
+                targetWorkspace.tabInfo.append(tab)
+                let (originalTab, currentTab) = targetWorkspace.switchTab(to: &tab)
+                state.chatHistory.updateHistory(targetWorkspace)
+                
+                let currentChatWorkspace = chatWorkspace
+                return .run { send in
+                    await send(.saveChatTabInfo([originalTab, currentTab], currentChatWorkspace))
+                }
+
+//            case .switchToNextTab:
+//                let selectedId = state.chatTabGroup.selectedTabId
+//                guard let index = state.chatTabGroup.tabInfo
+//                    .firstIndex(where: { $0.id == selectedId })
+//                else { return .none }
+//                let nextIndex = index + 1
+//                if nextIndex >= state.chatTabGroup.tabInfo.endIndex {
+//                    return .none
+//                }
+//                let targetId = state.chatTabGroup.tabInfo[nextIndex].id
+//                state.chatTabGroup.selectedTabId = targetId
+//                return .run { send in
+//                    await send(.focusActiveChatTab)
+//                }
+
+//            case .switchToPreviousTab:
+//                let selectedId = state.chatTabGroup.selectedTabId
+//                guard let index = state.chatTabGroup.tabInfo
+//                    .firstIndex(where: { $0.id == selectedId })
+//                else { return .none }
+//                let previousIndex = index - 1
+//                if previousIndex < 0 || previousIndex >= state.chatTabGroup.tabInfo.endIndex {
+//                    return .none
+//                }
+//                let targetId = state.chatTabGroup.tabInfo[previousIndex].id
+//                state.chatTabGroup.selectedTabId = targetId
+//                return .run { send in
+//                    await send(.focusActiveChatTab)
+//                }
+
+//            case let .moveChatTab(from, to):
+//                guard from >= 0, from < state.chatTabGroup.tabInfo.endIndex, to >= 0,
+//                      to <= state.chatTabGroup.tabInfo.endIndex
+//                else {
+//                    return .none
+//                }
+//                let tab = state.chatTabGroup.tabInfo[from]
+//                state.chatTabGroup.tabInfo.remove(at: from)
+//                state.chatTabGroup.tabInfo.insert(tab, at: to)
+//                return .none
 
             case .focusActiveChatTab:
                 guard FeatureFlagNotifierImpl.shared.featureFlags.chat else {
                     return .none
                 }
-                let id = state.chatTabGroup.selectedTabInfo?.id
+                let id = state.currentChatWorkspace?.selectedTabInfo?.id
                 guard let id else { return .none }
                 return .run { send in
                     await send(.chatTab(id: id, action: .focus))
                 }
 
-            case let .chatTab(id, .close):
-                return .run { send in
-                    await send(.closeTabButtonClicked(id: id))
-                }
+//            case let .chatTab(id, .close):
+//                return .run { send in
+//                    await send(.closeTabButtonClicked(id: id))
+//                }
 
+            // MARK: - ChatTabItem action
+                
+            case let .chatTab(id, .tabContentUpdated):
+                guard var currentChatWorkspace = state.currentChatWorkspace,
+                      var info = state.currentChatWorkspace?.tabInfo[id: id]
+                else { return .none }
+                
+                info.updatedAt = .now
+                currentChatWorkspace.tabInfo[id: id] = info
+                state.chatHistory.updateHistory(currentChatWorkspace)
+                
+                let chatTabInfo = info
+                let chatWorkspace = currentChatWorkspace
+                return .run { send in
+                    await send(.saveChatTabInfo([chatTabInfo], chatWorkspace))
+                }
+                
+            case let .chatTab(id, .setCLSConversationID(CID)):
+                guard var currentChatWorkspace = state.currentChatWorkspace,
+                      var info = state.currentChatWorkspace?.tabInfo[id: id]
+                else { return .none }
+                
+                info.CLSConversationID = CID
+                currentChatWorkspace.tabInfo[id: id] = info
+                state.chatHistory.updateHistory(currentChatWorkspace)
+                
+                let chatTabInfo = info
+                let chatWorkspace = currentChatWorkspace
+                return .run { send in
+                    await send(.saveChatTabInfo([chatTabInfo], chatWorkspace))
+                }
+                
+            case let .chatTab(id, .updateTitle(title)):
+                guard var currentChatWorkspace = state.currentChatWorkspace,
+                      var info = state.currentChatWorkspace?.tabInfo[id: id],
+                      !info.isTitleSet
+                else { return .none }
+                
+                info.title = title
+                info.updatedAt = .now
+                currentChatWorkspace.tabInfo[id: id] = info
+                state.chatHistory.updateHistory(currentChatWorkspace)
+                
+                let chatTabInfo = info
+                let chatWorkspace = currentChatWorkspace
+                return .run { send in
+                    await send(.saveChatTabInfo([chatTabInfo], chatWorkspace))
+                }
+                
             case .chatTab:
                 return .none
+                
+            // MARK: - Persist
+            case let .saveChatTabInfo(chatTabInfos, chatWorkspace):
+                let toSaveInfo = chatTabInfos.compactMap { $0 }
+                guard toSaveInfo.count > 0 else { return .none }
+                let workspacePath = chatWorkspace.workspacePath
+                let username = chatWorkspace.username
+                
+                ChatTabInfoStore.saveAll(toSaveInfo, with: .init(workspacePath: workspacePath, username: username))
+                return .none
+                
+            case let .deleteChatTabInfo(id, chatWorkspace):
+                let workspacePath = chatWorkspace.workspacePath
+                let username = chatWorkspace.username
+                
+                ChatTabInfoStore.delete(by: id, with: .init(workspacePath: workspacePath, username: username))
+                return .none
+            case var .restoreWorkspace(chatWorkspace):
+                // chat opened before finishing restoration
+                if var existChatWorkspace = state.chatHistory.workspaces[id: chatWorkspace.id] {
+                    
+                    if var selectedChatTabInfo = chatWorkspace.tabInfo.first(where: { $0.id == chatWorkspace.selectedTabId }) {
+                        // Keep the selection state when restoring
+                        selectedChatTabInfo.isSelected = true
+                        chatWorkspace.tabInfo[id: selectedChatTabInfo.id] = selectedChatTabInfo
+                        
+                        // Update the existing workspace's selected tab to match
+                        existChatWorkspace.selectedTabId = selectedChatTabInfo.id
+                        
+                        // merge tab info
+                        existChatWorkspace.tabInfo.append(contentsOf: chatWorkspace.tabInfo)
+                        state.chatHistory.updateHistory(existChatWorkspace)
+                        
+                        let chatTabInfo = selectedChatTabInfo
+                        let workspace = chatWorkspace
+                        return .run { send in
+                            // update chat tab info
+                            await send(.saveChatTabInfo([chatTabInfo], workspace))
+                        }
+                    }
+                    
+                    // merge tab info
+                    existChatWorkspace.tabInfo.append(contentsOf: chatWorkspace.tabInfo)
+                    state.chatHistory.updateHistory(existChatWorkspace)
+                    return .none
+                }
+                
+                state.chatHistory.addWorkspace(chatWorkspace)
+                return .none
             }
-        }.forEach(\.chatTabGroup.tabInfo, action: /Action.chatTab) {
-            ChatTabItem()
         }
+//        .forEach(\.chatGroupCollection.selectedChatGroup?.tabInfo, action: /Action.chatTab) {
+//            ChatTabItem()
+//        }
     }
 }
 
+extension ChatWorkspace {
+    public mutating func switchTab(to chatTabInfo: inout ChatTabInfo) -> (originalTab: ChatTabInfo?, currentTab: ChatTabInfo) {
+        guard self.selectedTabId != chatTabInfo.id else { return (nil, chatTabInfo) }
+        
+        // get original selected tab info to update its isSelected
+        var originalTabInfo: ChatTabInfo? = nil
+        if self.selectedTabId != nil {
+            originalTabInfo = self.tabInfo[id: self.selectedTabId!]
+        }
+
+        // fresh selected info in chatWorksapce and tabInfo
+        self.selectedTabId = chatTabInfo.id
+        originalTabInfo?.isSelected = false
+        chatTabInfo.isSelected = true
+        
+        // update tab back to chatWorkspace
+        self.tabInfo[id: chatTabInfo.id] = chatTabInfo
+        if let originalTabInfo {
+            self.tabInfo[id: originalTabInfo.id] = originalTabInfo
+        }
+        
+        return (originalTabInfo, chatTabInfo)
+    }
+}

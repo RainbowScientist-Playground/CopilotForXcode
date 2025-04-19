@@ -33,6 +33,14 @@ public struct LaunchAgentManager {
             await removeObsoleteLaunchAgent()
         }
     }
+    
+    @available(macOS 13.0, *)
+    public func isBackgroundPermissionGranted() async -> Bool {
+        // On macOS 13+, check SMAppService status
+        let bridgeLaunchAgent = SMAppService.agent(plistName: "bridgeLaunchAgent.plist")
+        let status = bridgeLaunchAgent.status
+        return status != .requiresApproval
+    }
 
     public func setupLaunchAgent() async throws {
         if #available(macOS 13, *) {

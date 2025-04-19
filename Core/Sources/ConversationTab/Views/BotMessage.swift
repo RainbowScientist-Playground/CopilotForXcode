@@ -4,76 +4,136 @@ import Foundation
 import MarkdownUI
 import SharedUIComponents
 import SwiftUI
+import ConversationServiceProvider
+import ChatTab
+import ChatAPIService
 
 struct BotMessage: View {
     var r: Double { messageBubbleCornerRadius }
     let id: String
     let text: String
-    let references: [DisplayedChatMessage.Reference]
+    let references: [ConversationReference]
+    let followUp: ConversationFollowUp?
+    let errorMessage: String?
     let chat: StoreOf<Chat>
+    let steps: [ConversationProgressStep]
+    
     @Environment(\.colorScheme) var colorScheme
+    @AppStorage(\.chatFontSize) var chatFontSize
 
     @State var isReferencesPresented = false
-    @State var isReferencesHovered = false
+    
+    struct ResponseToolBar: View {
+        let id: String
+        let chat: StoreOf<Chat>
+        let text: String
+        
+        var body: some View {
+            HStack(spacing: 4) {
+                
+                UpvoteButton { rating in
+                    chat.send(.upvote(id, rating))
+                }
+                
+                DownvoteButton { rating in
+                    chat.send(.downvote(id, rating))
+                }
+                
+                CopyButton {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    chat.send(.copyCode(id))
+                }
+                
+                Spacer() // Pushes the buttons to the left
+            }
+        }
+    }
+    
+    struct ReferenceButton: View {
+        var r: Double { messageBubbleCornerRadius }
+        let references: [ConversationReference]
+        let chat: StoreOf<Chat>
+        
+        @Binding var isReferencesPresented: Bool
+        
+        @State var isReferencesHovered = false
+        
+        @AppStorage(\.chatFontSize) var chatFontSize
+        
+        func MakeReferenceTitle(references: [ConversationReference]) -> String {
+            guard !references.isEmpty else {
+                return ""
+            }
+            
+            let count = references.count
+            let title = count > 1 ? "Used \(count) references" : "Used \(count) reference"
+            return title
+        }
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Button(action: {
+                    isReferencesPresented.toggle()
+                }, label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: isReferencesPresented ? "chevron.down" : "chevron.right")
+                            
+                        Text(MakeReferenceTitle(references: references))
+                            .font(.system(size: chatFontSize))
+                    }
+                    .background {
+                        RoundedRectangle(cornerRadius: r - 4)
+                            .fill(isReferencesHovered ? Color.gray.opacity(0.1) : Color.clear)
+                    }
+                    .foregroundStyle(.secondary)
+                })
+                .buttonStyle(HoverButtonStyle())
+                .accessibilityValue(isReferencesPresented ? "Collapse" : "Expand")
+                
+                if isReferencesPresented {
+                    ReferenceList(references: references, chat: chat)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(Color.gray, lineWidth: 0.2)
+                        )
+                }
+            }
+        }
+    }
 
     var body: some View {
-        HStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 0) {
-                    Spacer() // Pushes the buttons to the right
-                    UpvoteButton { rating in
-                        chat.send(.upvote(id, rating))
-                    }
-                    
-                    DownvoteButton { rating in
-                        chat.send(.downvote(id, rating))
-                    }
-                    
-                    CopyButton {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
-                        chat.send(.copyCode(id))
+        HStack {
+            VStack(alignment: .leading, spacing: 8) {
+                CopilotMessageHeader()
+                    .padding(.leading, 6)
+                
+                if !references.isEmpty {
+                    WithPerceptionTracking {
+                        ReferenceButton(
+                            references: references,
+                            chat: chat,
+                            isReferencesPresented: $isReferencesPresented
+                        )
                     }
                 }
                 
-                if !references.isEmpty {
-                    Button(action: {
-                        isReferencesPresented.toggle()
-                    }, label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus.circle")
-                            Text("Used \(references.count) references")
-                        }
-                        .padding(8)
-                        .background {
-                            RoundedRectangle(cornerRadius: r - 4)
-                                .foregroundStyle(Color(isReferencesHovered ? .black : .clear))
-                        }
-                        .overlay {
-                            RoundedRectangle(cornerRadius: r - 4)
-                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-                        }
-                        .foregroundStyle(.secondary)
-                    })
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $isReferencesPresented, arrowEdge: .trailing) {
-                        ReferenceList(references: references, chat: chat)
+                // progress step
+                if steps.count > 0 {
+                    ProgressStep(steps: steps)
+                }
+
+                ThemedMarkdownText(text: text, chat: chat)
+
+                if errorMessage != nil {
+                    HStack(spacing: 4) {
+                        Image(systemName: "info.circle")
+                        ThemedMarkdownText(text: errorMessage!, chat: chat)
                     }
                 }
 
-                ThemedMarkdownText(text)
+                ResponseToolBar(id: id, chat: chat, text: text)
             }
-            .frame(alignment: .trailing)
-            .padding()
-            .background {
-                RoundedCorners(tl: r, tr: r, bl: 0, br: r)
-                    .fill(Color.contentBackground)
-            }
-            .overlay {
-                RoundedCorners(tl: r, tr: r, bl: 0, br: r)
-                    .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-            }
-            .padding(.leading, 8)
             .shadow(color: .black.opacity(0.05), radius: 6)
             .contextMenu {
                 Button("Copy") {
@@ -92,201 +152,146 @@ struct BotMessage: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.trailing, 2)
     }
 }
 
 struct ReferenceList: View {
-    let references: [DisplayedChatMessage.Reference]
+    let references: [ConversationReference]
     let chat: StoreOf<Chat>
+
+    private let maxVisibleItems: Int = 6
+    @State private var itemHeight: CGFloat = 16
+    
+    @AppStorage(\.chatFontSize) var chatFontSize
+    
+    struct ReferenceView: View {
+        let references: [ConversationReference]
+        let chat: StoreOf<Chat>
+        @AppStorage(\.chatFontSize) var chatFontSize
+        @Binding var itemHeight: CGFloat
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(0..<references.endIndex, id: \.self) { index in
+                    WithPerceptionTracking {
+                        let reference = references[index]
+
+                        Button(action: {
+                            chat.send(.referenceClicked(reference))
+                        }) {
+                            HStack(spacing: 8) {
+                                drawFileIcon(reference.url)
+                                    .resizable()
+                                    .frame(width: 16, height: 16)
+                                Text(reference.fileName)
+                                    .truncationMode(.middle)
+                                    .lineLimit(1)
+                                    .layoutPriority(1)
+                                    .font(.system(size: chatFontSize))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(HoverButtonStyle())
+                        .background(GeometryReader { geometry in
+                            Color.clear.onAppear {
+                                itemHeight = geometry.size.height
+                            }
+                        })
+                        .help(reference.getPathRelativeToHome())
+                    }
+                }
+            }
+        }
+    }
 
     var body: some View {
         WithPerceptionTracking {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(0..<references.endIndex, id: \.self) { index in
-                        WithPerceptionTracking {
-                            let reference = references[index]
-
-                            Button(action: {
-                                chat.send(.referenceClicked(reference))
-                            }) {
-                                HStack(spacing: 8) {
-                                    ReferenceIcon(kind: reference.kind)
-                                        .layoutPriority(2)
-                                    Text(reference.title)
-                                        .truncationMode(.middle)
-                                        .lineLimit(1)
-                                        .layoutPriority(1)
-                                    Text(reference.subtitle)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                        .foregroundStyle(.tertiary)
-                                        .layoutPriority(0)
-                                }
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, 4)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+            if references.count <= maxVisibleItems {
+                ReferenceView(references: references,  chat: chat, itemHeight: $itemHeight)
+            } else {
+                HoverScrollView {
+                    ReferenceView(references: references,  chat: chat, itemHeight: $itemHeight)
                 }
-                .padding()
             }
-            .frame(maxWidth: 500, maxHeight: 500)
         }
+        .frame(maxWidth: .infinity, maxHeight: maxViewHeight)
+
+    }
+    
+    private var maxViewHeight: CGFloat {
+        let totalHeight = CGFloat(references.count) * itemHeight
+        let maxHeight = CGFloat(maxVisibleItems) * itemHeight
+        return min(totalHeight, maxHeight)
     }
 }
 
-struct ReferenceIcon: View {
-    let kind: DisplayedChatMessage.Reference.Kind
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 4)
-            .fill({
-                switch kind {
-                case .class:
-                    Color.purple
-                case .struct:
-                    Color.purple
-                case .enum:
-                    Color.purple
-                case .actor:
-                    Color.purple
-                case .protocol:
-                    Color.purple
-                case .extension:
-                    Color.indigo
-                case .case:
-                    Color.green
-                case .property:
-                    Color.teal
-                case .typealias:
-                    Color.orange
-                case .function:
-                    Color.teal
-                case .method:
-                    Color.blue
-                case .text:
-                    Color.gray
-                case .webpage:
-                    Color.blue
-                case .other:
-                    Color.gray
-                }
-            }())
-            .frame(width: 22, height: 22)
-            .overlay(alignment: .center) {
-                Group {
-                    switch kind {
-                    case .class:
-                        Text("C")
-                    case .struct:
-                        Text("S")
-                    case .enum:
-                        Text("E")
-                    case .actor:
-                        Text("A")
-                    case .protocol:
-                        Text("Pr")
-                    case .extension:
-                        Text("Ex")
-                    case .case:
-                        Text("K")
-                    case .property:
-                        Text("P")
-                    case .typealias:
-                        Text("T")
-                    case .function:
-                        Text("𝑓")
-                    case .method:
-                        Text("M")
-                    case .text:
-                        Text("Tx")
-                    case .webpage:
-                        Text("Wb")
-                    case .other:
-                        Text("Ot")
-                    }
-                }
-                .font(.system(size: 12).monospaced())
-                .foregroundColor(.white)
-            }
+struct BotMessage_Previews: PreviewProvider {
+    static let steps: [ConversationProgressStep] = [
+        .init(id: "001", title: "running step", description: "this is running step", status: .running, error: nil),
+        .init(id: "002", title: "completed step", description: "this is completed step", status: .completed, error: nil),
+        .init(id: "003", title: "failed step", description: "this is failed step", status: .failed, error: nil),
+        .init(id: "004", title: "cancelled step", description: "this is cancelled step", status: .cancelled, error: nil)
+    ]
+    
+    static var previews: some View {
+        let chatTabInfo = ChatTabInfo(id: "id", workspacePath: "path", username: "name")
+        BotMessage(
+            id: "1",
+            text: """
+            **Hey**! What can I do for you?**Hey**! What can I do for you?**Hey**! What can I do for you?**Hey**! What can I do for you?
+            ```swift
+            func foo() {}
+            ```
+            """,
+            references: .init(repeating: .init(
+                uri: "/Core/Sources/ConversationTab/Views/BotMessage.swift",
+                status: .included,
+                kind: .class
+            ), count: 2),
+            followUp: ConversationFollowUp(message: "followup question", id: "id", type: "type"),
+            errorMessage: "Sorry, an error occurred while generating a response.",
+            chat: .init(initialState: .init(), reducer: { Chat(service: ChatService.service(for: chatTabInfo)) }),
+            steps: steps
+        )
+        .padding()
+        .fixedSize(horizontal: true, vertical: true)
     }
 }
 
-#Preview("Bot Message") {
-    BotMessage(
-        id: "1",
-        text: """
-        **Hey**! What can I do for you?**Hey**! What can I do for you?**Hey**! What can I do for you?**Hey**! What can I do for you?
-        ```swift
-        func foo() {}
-        ```
-        """,
-        references: .init(repeating: .init(
-            title: "ReferenceList",
-            subtitle: "/Core/Sources/ConversationTab/Views/BotMessage.swift:100",
-            uri: "https://google.com",
-            startLine: nil,
-            kind: .class
-        ), count: 20),
-        chat: .init(initialState: .init(), reducer: { Chat(service: ChatService.service()) })
-    )
-    .padding()
-    .fixedSize(horizontal: true, vertical: true)
+struct ReferenceList_Previews: PreviewProvider {
+    static var previews: some View {
+        let chatTabInfo = ChatTabInfo(id: "id", workspacePath: "path", username: "name")
+        ReferenceList(references: [
+            .init(
+                uri: "/Core/Sources/ConversationTab/Views/BotMessage.swift",
+                status: .included,
+                kind: .class
+            ),
+            .init(
+                uri: "/Core/Sources/ConversationTab/Views",
+                status: .included,
+                kind: .struct
+            ),
+            .init(
+                uri: "/Core/Sources/ConversationTab/Views/BotMessage.swift",
+                status: .included,
+                kind: .function
+            ),
+            .init(
+                uri: "/Core/Sources/ConversationTab/Views/BotMessage.swift",
+                status: .included,
+                kind: .case
+            ),
+            .init(
+                uri: "/Core/Sources/ConversationTab/Views/BotMessage.swift",
+                status: .included,
+                kind: .extension
+            ),
+            .init(
+                uri: "/Core/Sources/ConversationTab/Views/BotMessage.swift",
+                status: .included,
+                kind: .webpage
+            ),
+        ], chat: .init(initialState: .init(), reducer: { Chat(service: ChatService.service(for: chatTabInfo)) }))
+    }
 }
-
-#Preview("Reference List") {
-    ReferenceList(references: [
-        .init(
-            title: "ReferenceList",
-            subtitle: "/Core/Sources/ConversationTab/Views/BotMessage.swift:100",
-            uri: "https://google.com",
-            startLine: nil,
-            kind: .class
-        ),
-        .init(
-            title: "BotMessage.swift:100-102",
-            subtitle: "/Core/Sources/ConversationTab/Views",
-            uri: "https://google.com",
-            startLine: nil,
-            kind: .struct
-        ),
-        .init(
-            title: "ReferenceList",
-            subtitle: "/Core/Sources/ConversationTab/Views/BotMessage.swift:100",
-            uri: "https://google.com",
-            startLine: nil,
-            kind: .function
-        ),
-        .init(
-            title: "ReferenceList",
-            subtitle: "/Core/Sources/ConversationTab/Views/BotMessage.swift:100",
-            uri: "https://google.com",
-            startLine: nil,
-            kind: .case
-        ),
-        .init(
-            title: "ReferenceList",
-            subtitle: "/Core/Sources/ConversationTab/Views/BotMessage.swift:100",
-            uri: "https://google.com",
-            startLine: nil,
-            kind: .extension
-        ),
-        .init(
-            title: "ReferenceList",
-            subtitle: "/Core/Sources/ConversationTab/Views/BotMessage.swift:100",
-            uri: "https://google.com",
-            startLine: nil,
-            kind: .webpage
-        ),
-    ], chat: .init(initialState: .init(), reducer: { Chat(service: ChatService.service()) }))
-}
-

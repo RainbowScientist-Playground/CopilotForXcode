@@ -125,12 +125,18 @@ public actor RealtimeSuggestionController {
                 do {
                     try await XcodeInspector.shared.safe.latestActiveXcode?
                         .triggerCopilotCommand(name: "Sync Text Settings")
-                    await Status.shared.updateExtensionStatus(.succeeded)
+                    await Status.shared.updateExtensionStatus(.granted)
                 } catch {
                     if filespace.codeMetadata.uti?.isEmpty ?? true {
                         filespace.codeMetadata.uti = nil
                     }
-                    await Status.shared.updateExtensionStatus(.failed)
+                    if let cantRunError = error as? AppInstanceInspector.CantRunCommand {
+                        if cantRunError.errorDescription.contains("No bundle found") {
+                            await Status.shared.updateExtensionStatus(.notGranted)
+                        } else if cantRunError.errorDescription.contains("found but disabled") {
+                            await Status.shared.updateExtensionStatus(.disabled)
+                        }
+                    }
                 }
             }
         }
@@ -144,6 +150,10 @@ public actor RealtimeSuggestionController {
             ))
 
             if Task.isCancelled { return }
+            
+            // check if user loggin
+            let authStatus = await Status.shared.getAuthStatus()
+            guard authStatus == .loggedIn else { return }
 
             guard UserDefaults.shared.value(for: \.realtimeSuggestionToggle)
             else { return }

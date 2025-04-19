@@ -14,6 +14,17 @@ struct ChatTabItemView: View {
     }
 }
 
+struct ChatConversationItemView: View {
+    let chat: StoreOf<Chat>
+    
+    var body: some View {
+        WithPerceptionTracking {
+            Text(chat.title)
+                .frame(alignment: .leading)
+        }
+    }
+}
+
 struct ChatContextMenu: View {
     let store: StoreOf<ChatMenu>
     @AppStorage(\.customCommands) var customCommands

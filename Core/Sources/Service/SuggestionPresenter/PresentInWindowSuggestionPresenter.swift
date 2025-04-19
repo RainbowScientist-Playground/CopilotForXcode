@@ -49,6 +49,20 @@ struct PresentInWindowSuggestionPresenter {
         }
     }
 
+    func presentWarningMessage(_ message: String, url: String?) {
+        Task { @MainActor in
+            let controller = Service.shared.guiController.widgetController
+            controller.presentWarning(message: message, url: url)
+        }
+    }
+
+    func dismissWarning() {
+        Task { @MainActor in
+            let controller = Service.shared.guiController.widgetController
+            controller.dismissWarning()
+        }
+    }
+
     func closeChatRoom(fileURL: URL) {
         Task { @MainActor in
             let controller = Service.shared.guiController.widgetController

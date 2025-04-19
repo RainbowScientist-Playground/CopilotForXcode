@@ -1,9 +1,10 @@
 import ComposableArchitecture
+import GitHubCopilotViewModel
 import SwiftUI
 
 struct GeneralView: View {
     let store: StoreOf<General>
-    @StateObject private var viewModel = GitHubCopilotViewModel()
+    @StateObject private var viewModel = GitHubCopilotViewModel.shared
   
     var body: some View {
         ScrollView {

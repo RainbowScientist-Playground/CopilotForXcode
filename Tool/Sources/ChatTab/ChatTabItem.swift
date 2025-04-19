@@ -23,15 +23,16 @@ public struct ChatTabItem {
         case tabContentUpdated
         case close
         case focus
+        case setCLSConversationID(String)
     }
 
     public init() {}
 
     public var body: some ReducerOf<Self> {
         Reduce { state, action in
+            // the actions will be handled elsewhere in the ChatPanelFeature
             switch action {
-            case let .updateTitle(title):
-                state.title = title
+            case .updateTitle:
                 return .none
             case .openNewTab:
                 return .none
@@ -41,6 +42,8 @@ public struct ChatTabItem {
                 return .none
             case .focus:
                 state.focusTrigger += 1
+                return .none
+            case .setCLSConversationID:
                 return .none
             }
         }

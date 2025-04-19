@@ -10,10 +10,16 @@ class OpenChatCommand: NSObject, XCSourceEditorCommand, CommandType {
         with invocation: XCSourceEditorCommandInvocation,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        completionHandler(nil)
         Task {
-            let service = try getService()
-            _ = try await service.openChat(editorContent: .init(invocation))
+            do {
+                let service = try getService()
+                try await service.openChat()
+                completionHandler(nil)
+            } catch is CancellationError {
+                completionHandler(nil)
+            } catch {
+                completionHandler(error)
+            }
         }
     }
 }

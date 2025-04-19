@@ -5,14 +5,15 @@ common issues:
 
 1. Check for updates and restart Xcode. Ensure that Copilot for Xcode has the
    [latest release](https://github.com/github/CopilotForXcode/releases/latest)
-   by click `Check for Updates` in the settings or under the status menu. After
+   by clicking `Check for Updates` in the settings or under the status menu. After
    updating, restart Xcode.
 
-2. Ensure that the Copilot for Xcode extension is enabled. Open Xcode and go to
-   the top menu bar and open the `Editor` menu. If there is no `GitHub Copilot`
-   menu is under `Editor` then [extension permission](#extension-permission)
-   needs to be enabled. If the `GitHub Copilot` menu is shown but grayed out,
-   then Xcode needs to be restarted to enable the extension.
+2. Ensure that all required permissions are granted. GitHub Copilot for Xcode app requires these permissions to function properly:
+   - [Extension Permission](#extension-permission) - Allows GitHub Copilot to integrate with Xcode
+   - [Accessibility Permission](#accessibility-permission) - Enables real-time code suggestions
+   - [Background Permission](#background-permission) - Allows extension to connect with host app
+
+   Please note that GitHub Copilot for Xcode may not work properly if any necessary permissions are missing.
 
 3. Need more help? If these steps don't resolve the issue, please [open an
    issue](https://github.com/github/CopilotForXcode/issues/new/choose). Make
@@ -40,7 +41,7 @@ real-time updates from the active Xcode editor. [The XcodeKit
 API](https://developer.apple.com/documentation/xcodekit)
 enabled by the Xcode Source Editor extension permission only provides
 information when manually triggered by the user. In order to generate
-suggestions as you type, the accessibility permission is used read the
+suggestions as you type, the accessibility permission is used to read the
 Xcode editor content in real-time.
 
 The accessibility permission is also used to accept suggestions when `tab` is
@@ -52,6 +53,32 @@ but you can audit the usage in this repository: search for `CGEvent` and `AX`*.
 
 Enable in System Settings under `Privacy & Security` > `Accessibility` > 
 `GitHub Copilot for Xcode Extension` and turn on the toggle.
+
+## Background Permission
+
+GitHub Copilot for Xcode requires background permission to connect with the host app. This permission ensures proper communication between the components of GitHub Copilot for Xcode, which is essential for its functionality in Xcode.
+
+
+<p align="center">
+     <img alt="Background Permission" src="./Docs/background-item.png" width="400" />
+</p>
+
+This permission is typically granted automatically when you first launch GitHub Copilot for Xcode. However, if you encounter connection issues, alerts, or errors as follows:
+
+<p align="center">
+     <img alt="Alert of Background Permission Required" src="./Docs/background-permission-required.png" width="350" />
+     <img alt="Error connecting to the communication bridge" src="./Docs/connect-comm-bridge-failed.png" width="550" />
+</p>
+
+Please ensure that this permission is enabled. You can manually navigate to the background permission setting based on your macOS version:
+
+| macOS | Location |
+| :--- | :--- |
+| 15 | System Settings > General > Login Items & Extensions > Allow in the Background |
+| 13 & 14 | System Settings > General > Login Items > Allow in the Background |
+
+Ensure that "GitHub Copilot for Xcode" is enabled in the list of allowed background items. Without this permission, the extension may not be able to properly communicate with the host app, which can result in inconsistent behavior or reduced functionality.
+
 
 ## Logs
 

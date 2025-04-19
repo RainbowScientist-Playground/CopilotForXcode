@@ -54,7 +54,7 @@ public struct LineEdit {
     public let headEnd: String.Index
     public let tailStart: String.Index
 
-    static let tailChars: Set<Character> = [")", "}", "]", "\"", "'", "`"]
+    static let tailChars: Set<Character> = [")", ">", "}", "]", "\"", "'", "`"]
 
     /// The portion of the line to the left of the cursor.
     public var head: String.SubSequence {

@@ -19,7 +19,7 @@ public class FeatureFlagNotifierImpl: FeatureFlagNotifier {
     public static let shared = FeatureFlagNotifierImpl()
     public var featureFlagsDidChange: PassthroughSubject<FeatureFlags, Never>
     
-    init(featureFlags: FeatureFlags = FeatureFlags(rt: false, sn: false, chat: false),
+    init(featureFlags: FeatureFlags = FeatureFlags(rt: false, sn: false, chat: true),
          featureFlagsDidChange: PassthroughSubject<FeatureFlags, Never> = PassthroughSubject<FeatureFlags, Never>()) {
         self.featureFlags = featureFlags
         self.featureFlagsDidChange = featureFlagsDidChange

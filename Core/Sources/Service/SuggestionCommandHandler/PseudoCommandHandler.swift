@@ -9,12 +9,15 @@ import Workspace
 import WorkspaceSuggestionService
 import XcodeInspector
 import XPCShared
+import AXHelper
 
 /// It's used to run some commands without really triggering the menu bar item.
 ///
 /// For example, we can use it to generate real-time suggestions without Apple Scripts.
 struct PseudoCommandHandler {
     static var lastTimeCommandFailedToTriggerWithAccessibilityAPI = Date(timeIntervalSince1970: 0)
+    static var lastBundleNotFoundTime = Date(timeIntervalSince1970: 0)
+    static var lastBundleDisabledTime = Date(timeIntervalSince1970: 0)
     private var toast: ToastController { ToastControllerDependencyKey.liveValue }
 
     func presentPreviousSuggestion() async {
@@ -51,7 +54,7 @@ struct PseudoCommandHandler {
     func generateRealtimeSuggestions(sourceEditor: SourceEditor?) async {
         guard let filespace = await getFilespace(),
               let (workspace, _) = try? await Service.shared.workspacePool
-              .fetchOrCreateWorkspaceAndFilespace(fileURL: filespace.fileURL) else { return }
+            .fetchOrCreateWorkspaceAndFilespace(fileURL: filespace.fileURL) else { return }
 
         if Task.isCancelled { return }
 
@@ -88,6 +91,13 @@ struct PseudoCommandHandler {
                     lines: editorContent.lines,
                     cursorPosition: editorContent.cursorPosition
                 )
+            }
+            if !filespace.errorMessage.isEmpty {
+                presenter
+                    .presentWarningMessage(
+                        filespace.errorMessage,
+                        url: "https://github.com/github-copilot/signup/copilot_individual"
+                    )
             }
             if filespace.presentingSuggestion != nil {
                 presenter.presentSuggestion(fileURL: fileURL)
@@ -193,14 +203,14 @@ struct PseudoCommandHandler {
                     The app is using a fallback solution to accept suggestions. \
                     For better experience, please restart Xcode to re-activate the Copilot \
                     menu item.
-                    """, type: .warning)
+                    """, level: .warning)
                 }
 
                 throw error
             }
         } catch {
             guard let xcode = ActiveApplicationMonitor.shared.activeXcode
-                ?? ActiveApplicationMonitor.shared.latestXcode else { return }
+                    ?? ActiveApplicationMonitor.shared.latestXcode else { return }
             let application = AXUIElementCreateApplication(xcode.processIdentifier)
             guard let focusElement = application.focusedElement,
                   focusElement.description == "Source Editor"
@@ -247,21 +257,49 @@ struct PseudoCommandHandler {
                 try await XcodeInspector.shared.safe.latestActiveXcode?
                     .triggerCopilotCommand(name: "Accept Suggestion")
             } catch {
-                let last = Self.lastTimeCommandFailedToTriggerWithAccessibilityAPI
+                let lastBundleNotFoundTime = Self.lastBundleNotFoundTime
+                let lastBundleDisabledTime = Self.lastBundleDisabledTime
                 let now = Date()
-                if now.timeIntervalSince(last) > 60 * 60 {
-                    Self.lastTimeCommandFailedToTriggerWithAccessibilityAPI = now
-                    toast.toast(content: """
-                    Xcode is relying on a fallback solution for Copilot suggestions. \
-                    For optimal performance, please restart Xcode to reactivate Copilot.
-                    """, type: .warning)
+                if let cantRunError = error as? AppInstanceInspector.CantRunCommand {
+                    if cantRunError.errorDescription.contains("No bundle found") {
+                        // Extension permission not granted
+                        if now.timeIntervalSince(lastBundleNotFoundTime) > 60 * 60 {
+                            Self.lastBundleNotFoundTime = now
+                            toast.toast(
+                                title: "GitHub Copilot Extension Permission Not Granted",
+                                content: """
+                                Enable Extensions → Xcode Source Editor → GitHub Copilot \
+                                for Xcode for faster and full-featured code completion. \
+                                [View How-to Guide](https://github.com/github/CopilotForXcode/blob/main/TROUBLESHOOTING.md#extension-permission)
+                                """,
+                                level: .warning,
+                                button: .init(
+                                    title: "Enable",
+                                    action: { NSWorkspace.openXcodeExtensionsPreferences() }
+                                )
+                            )
+                        }
+                    } else if cantRunError.errorDescription.contains("found but disabled") {
+                        if now.timeIntervalSince(lastBundleDisabledTime) > 60 * 60 {
+                            Self.lastBundleDisabledTime = now
+                            toast.toast(
+                                title: "GitHub Copilot Extension Disabled",
+                                content: "Quit and restart Xcode to enable extension.",
+                                level: .warning,
+                                button: .init(
+                                    title: "Restart Xcode",
+                                    action: { NSWorkspace.restartXcode() }
+                                )
+                            )
+                        }
+                    }
                 }
 
                 throw error
             }
         } catch {
             guard let xcode = ActiveApplicationMonitor.shared.activeXcode
-                ?? ActiveApplicationMonitor.shared.latestXcode else { return }
+                    ?? ActiveApplicationMonitor.shared.latestXcode else { return }
             let application = AXUIElementCreateApplication(xcode.processIdentifier)
             guard let focusElement = application.focusedElement,
                   focusElement.description == "Source Editor"
@@ -324,69 +362,27 @@ extension PseudoCommandHandler {
         _ result: UpdatedContent,
         focusElement: AXUIElement
     ) throws {
-        let oldPosition = focusElement.selectedTextRange
-        let oldScrollPosition = focusElement.parent?.verticalScrollBar?.doubleValue
-
-        let error = AXUIElementSetAttributeValue(
-            focusElement,
-            kAXValueAttribute as CFString,
-            result.content as CFTypeRef
+        try AXHelper().injectUpdatedCodeWithAccessibilityAPI(
+            result,
+            focusElement: focusElement,
+            onError: {
+                PresentInWindowSuggestionPresenter()
+                    .presentErrorMessage("Fail to set editor content.")
+            }
         )
-
-        if error != AXError.success {
-            PresentInWindowSuggestionPresenter()
-                .presentErrorMessage("Fail to set editor content.")
-        }
-
-        // recover selection range
-
-        if let selection = result.newSelection {
-            var range = SourceEditor.convertCursorRangeToRange(selection, in: result.content)
-            if let value = AXValueCreate(.cfRange, &range) {
-                AXUIElementSetAttributeValue(
-                    focusElement,
-                    kAXSelectedTextRangeAttribute as CFString,
-                    value
-                )
-            }
-        } else if let oldPosition {
-            var range = CFRange(
-                location: oldPosition.lowerBound,
-                length: 0
-            )
-            if let value = AXValueCreate(.cfRange, &range) {
-                AXUIElementSetAttributeValue(
-                    focusElement,
-                    kAXSelectedTextRangeAttribute as CFString,
-                    value
-                )
-            }
-        }
-
-        // recover scroll position
-
-        if let oldScrollPosition,
-           let scrollBar = focusElement.parent?.verticalScrollBar
-        {
-            AXUIElementSetAttributeValue(
-                scrollBar,
-                kAXValueAttribute as CFString,
-                oldScrollPosition as CFTypeRef
-            )
-        }
     }
 
     func getFileContent(sourceEditor: AXUIElement?) async
-        -> (
-            content: String,
-            lines: [String],
-            selections: [CursorRange],
-            cursorPosition: CursorPosition,
-            cursorOffset: Int
-        )?
+    -> (
+        content: String,
+        lines: [String],
+        selections: [CursorRange],
+        cursorPosition: CursorPosition,
+        cursorOffset: Int
+    )?
     {
         guard let xcode = ActiveApplicationMonitor.shared.activeXcode
-            ?? ActiveApplicationMonitor.shared.latestXcode else { return nil }
+                ?? ActiveApplicationMonitor.shared.latestXcode else { return nil }
         let application = AXUIElementCreateApplication(xcode.processIdentifier)
         guard let focusElement = sourceEditor ?? application.focusedElement,
               focusElement.description == "Source Editor"
@@ -407,7 +403,7 @@ extension PseudoCommandHandler {
         guard
             let fileURL = await getFileURL(),
             let (_, filespace) = try? await Service.shared.workspacePool
-            .fetchOrCreateWorkspaceAndFilespace(fileURL: fileURL)
+                .fetchOrCreateWorkspaceAndFilespace(fileURL: fileURL)
         else { return nil }
         return filespace
     }

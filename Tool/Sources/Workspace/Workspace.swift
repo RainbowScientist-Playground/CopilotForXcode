@@ -2,6 +2,8 @@ import Foundation
 import Preferences
 import UserDefaultsObserver
 import XcodeInspector
+import Logger
+import UniformTypeIdentifiers
 
 enum Environment {
     static var now = { Date() }
@@ -49,14 +51,20 @@ open class WorkspacePlugin {
 
 @dynamicMemberLookup
 public final class Workspace {
-    public struct UnsupportedFileError: Error, LocalizedError {
-        public var extensionName: String
+    public enum WorkspaceFileError: LocalizedError {
+        case unsupportedFile(extensionName: String)
+        case fileNotFound(fileURL: URL)
+        case invalidFileFormat(fileURL: URL)
+        
         public var errorDescription: String? {
-            "File type \(extensionName) unsupported."
-        }
-
-        public init(extensionName: String) {
-            self.extensionName = extensionName
+            switch self {
+            case .unsupportedFile(let extensionName):
+                return "File type \(extensionName) unsupported."
+            case .fileNotFound(let fileURL):
+                return "File \(fileURL) not found."
+            case .invalidFileFormat(let fileURL):
+                return "The file \(fileURL.lastPathComponent) couldn't be opened because it isn't in the correct format."
+            }
         }
     }
 
@@ -106,7 +114,13 @@ public final class Workspace {
         let openedFiles = openedFileRecoverableStorage.openedFiles
         Task { @WorkspaceActor in
             for fileURL in openedFiles {
-                _ = createFilespaceIfNeeded(fileURL: fileURL)
+                do {
+                    _ = try createFilespaceIfNeeded(fileURL: fileURL)
+                } catch _ as WorkspaceFileError {
+                    openedFileRecoverableStorage.closeFile(fileURL: fileURL)
+                } catch {
+                    Logger.workspacePool.error(error)
+                }
             }
         }
     }
@@ -116,7 +130,25 @@ public final class Workspace {
     }
 
     @WorkspaceActor
-    public func createFilespaceIfNeeded(fileURL: URL) -> Filespace {
+    public func createFilespaceIfNeeded(fileURL: URL) throws -> Filespace {
+        let extensionName = fileURL.pathExtension
+        
+        if ["xcworkspace", "xcodeproj"].contains(
+            extensionName
+        ) || FileManager.default
+            .fileIsDirectory(atPath: fileURL.path) {
+            throw WorkspaceFileError.unsupportedFile(extensionName: extensionName)
+        }
+        
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            throw WorkspaceFileError.fileNotFound(fileURL: fileURL)
+        }
+        
+        if let contentType = try fileURL.resourceValues(forKeys: [.contentTypeKey]).contentType,
+           !contentType.conforms(to: UTType.data) {
+            throw WorkspaceFileError.invalidFileFormat(fileURL: fileURL)
+        }
+        
         let existedFilespace = filespaces[fileURL]
         let filespace = existedFilespace ?? .init(
             fileURL: fileURL,

@@ -7,30 +7,42 @@ struct SuggestionPanelView: View {
 
     var body: some View {
         WithPerceptionTracking {
-            VStack(spacing: 0) {
-                Content(store: store)
-                    .allowsHitTesting(
-                        store.isPanelDisplayed && !store.isPanelOutOfFrame
+            Group {
+                if let message = store.warningMessage {
+                    WarningPanel(
+                        message: message,
+                        url: store.warningURL,
+                        firstLineIndent: store.firstLineIndent
+                    ) {
+                        store.send(.dismissWarning)
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        Content(store: store)
+                            .allowsHitTesting(
+                                store.isPanelDisplayed && !store.isPanelOutOfFrame
+                            )
+                            .frame(maxWidth: .infinity)
+                    }
+                    .preferredColorScheme(store.colorScheme)
+                    .opacity(store.opacity)
+                    .animation(
+                        featureFlag: \.animationBCrashSuggestion,
+                        .easeInOut(duration: 0.2),
+                        value: store.isPanelDisplayed
                     )
-                    .frame(maxWidth: .infinity)
+                    .animation(
+                        featureFlag: \.animationBCrashSuggestion,
+                        .easeInOut(duration: 0.2),
+                        value: store.isPanelOutOfFrame
+                    )
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: Style.inlineSuggestionMaxHeight,
+                        alignment: .top
+                    )
+                }
             }
-            .preferredColorScheme(store.colorScheme)
-            .opacity(store.opacity)
-            .animation(
-                featureFlag: \.animationBCrashSuggestion,
-                .easeInOut(duration: 0.2),
-                value: store.isPanelDisplayed
-            )
-            .animation(
-                featureFlag: \.animationBCrashSuggestion,
-                .easeInOut(duration: 0.2),
-                value: store.isPanelOutOfFrame
-            )
-            .frame(
-                maxWidth: .infinity,
-                maxHeight: Style.inlineSuggestionMaxHeight,
-                alignment: .top
-            )
         }
     }
 

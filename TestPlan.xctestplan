@@ -91,6 +91,24 @@
         "identifier" : "WorkspaceSuggestionServiceTests",
         "name" : "WorkspaceSuggestionServiceTests"
       }
+    },
+    {
+      "skippedTests" : [
+        "FileChangeWatcherServiceTests\/testProjectMonitoringDetectsAddedProjects()",
+        "FileChangeWatcherServiceTests\/testProjectMonitoringDetectsRemovedProjects()"
+      ],
+      "target" : {
+        "containerPath" : "container:Tool",
+        "identifier" : "WorkspaceTests",
+        "name" : "WorkspaceTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:Core",
+        "identifier" : "ChatServiceTests",
+        "name" : "ChatServiceTests"
+      }
     }
   ],
   "version" : 1

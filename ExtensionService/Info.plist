@@ -27,5 +27,7 @@
 	<string>$(COPILOT_DOCS_URL)</string>
 	<key>COPILOT_FORUM_URL</key>
 	<string>$(COPILOT_FORUM_URL)</string>
+	<key>STANDARD_TELEMETRY_CHANNEL_KEY</key>
+	<string>$(STANDARD_TELEMETRY_CHANNEL_KEY)</string>
 </dict>
 </plist>

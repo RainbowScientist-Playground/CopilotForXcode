@@ -2,12 +2,46 @@ import AppKit
 import AXExtension
 import Foundation
 import Logger
+import Status
 
 public extension XcodeAppInstanceInspector {
     func triggerCopilotCommand(name: String, activateXcode: Bool = true) async throws {
-        let bundleName = Bundle.main
-            .object(forInfoDictionaryKey: "EXTENSION_BUNDLE_NAME") as! String
+        let bundleName = Bundle.main.object(forInfoDictionaryKey: "EXTENSION_BUNDLE_NAME") as! String
+        let status = await getExtensionStatus(bundleName: bundleName)
+        guard status == .granted else {
+            let reason: String
+            switch status {
+            case .notGranted:
+                reason = "No bundle found for \(bundleName)."
+            case .disabled:
+                reason = "\(bundleName) is found but disabled."
+            default:
+                reason = ""
+            }
+            throw CantRunCommand(path: "Editor/\(bundleName)/\(name)", reason: reason)
+        }
+        
         try await triggerMenuItem(path: ["Editor", bundleName, name], activateApp: activateXcode)
+    }
+    
+    private func getExtensionStatus(bundleName: String) async -> ExtensionPermissionStatus {
+        let app = AXUIElementCreateApplication(runningApplication.processIdentifier)
+        
+        guard let menuBar = app.menuBar,
+              let editorMenu = menuBar.child(title: "Editor") else {
+            return .notGranted
+        }
+        
+        if let bundleMenuItem = editorMenu.child(title: bundleName, role: "AXMenuItem") {
+            var enabled: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(bundleMenuItem, kAXEnabledAttribute as CFString, &enabled)
+            if error == .success, let isEnabled = enabled as? Bool {
+                return isEnabled ? .granted : .disabled
+            }
+            return .disabled
+        }
+        
+        return .notGranted
     }
 }
 
@@ -15,7 +49,7 @@ public extension AppInstanceInspector {
     struct CantRunCommand: Error, LocalizedError {
         let path: String
         let reason: String
-        public var errorDescription: String? {
+        public var errorDescription: String {
             "Can't run command \(path): \(reason)"
         }
     }

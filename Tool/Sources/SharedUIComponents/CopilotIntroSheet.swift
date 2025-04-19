@@ -59,23 +59,29 @@ struct CopilotIntroContent: View {
                 .font(.title.bold())
                 .padding(.bottom, 38)
 
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 20) {  
                 CopilotIntroItem(
                     imageName: "CopilotLogo",
                     heading: "In-line Code Suggestions",
-                    text: "Copilot's code suggestions and text completion now available in Xcode. Press Tab ⇥ to accept a suggestion."
+                    text: "Receive context-aware code suggestions and text completion in your Xcode editor. Just press Tab ⇥ to accept a suggestion."
                 )
 
                 CopilotIntroItem(
                     systemImage: "option",
-                    heading: "Full Suggestion",
-                    text: "Press Option ⌥ key to display the full suggestion. Only the first line of suggestions are shown inline."
+                    heading: "Full Suggestions",
+                    text: "Press Option ⌥ for full multi-line suggestions. Only the first line is shown inline. Use Copilot Chat to refine, explain, or improve them."
+                )
+
+                CopilotIntroItem(
+                    imageName: "ChatIcon",
+                    heading: "Chat",
+                    text: "Get real-time coding assistance, debug issues, and generate code snippets directly within Xcode."
                 )
 
                 CopilotIntroItem(
                     imageName: "GitHubMark",
                     heading: "GitHub Context",
-                    text: "Copilot utilizes project context to deliver smarter code suggestions relevant to your unique codebase."
+                    text: "Copilot gives smarter code suggestions using your GitHub and project context. Use chat to discuss your code, debug issues, or get explanations."
                 )
             }
             .padding(.bottom, 64)
