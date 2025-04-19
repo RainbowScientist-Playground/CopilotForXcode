@@ -16,7 +16,7 @@ public final class GitHubCopilotConversationService: ConversationServiceType {
         
         return try await service.createConversation(request.content,
                                                     workDoneToken: request.workDoneToken,
-                                                    workspaceFolder: request.workspaceFolder,
+                                                    workspaceFolder: workspace.projectURL.path,
                                                     doc: nil,
                                                     skills: request.skills,
                                                     ignoredSkills: request.ignoredSkills,
@@ -34,7 +34,8 @@ public final class GitHubCopilotConversationService: ConversationServiceType {
                                             doc: nil,
                                             ignoredSkills: request.ignoredSkills,
                                             references: request.references ?? [],
-                                            model: request.model)
+                                            model: request.model,
+                                            workspaceFolder: workspace.projectURL.path)
     }
     
     public func cancelProgress(_ workDoneToken: String, workspace: WorkspaceInfo) async throws {
@@ -62,4 +63,18 @@ public final class GitHubCopilotConversationService: ConversationServiceType {
         guard let service = await serviceLocator.getService(from: workspace) else { return nil }
         return try await service.models()
     }
+    
+    public func notifyDidChangeWatchedFiles(_ event: DidChangeWatchedFilesEvent, workspace: WorkspaceInfo) async throws {
+        guard let service = await serviceLocator.getService(from: workspace) else {
+            return
+        }
+        
+        return try await service.notifyDidChangeWatchedFiles(.init(workspaceUri: event.workspaceUri, changes: event.changes))
+    }
+    
+    public func agents(workspace: WorkspaceInfo) async throws -> [ChatAgent]? {
+        guard let service = await serviceLocator.getService(from: workspace) else { return nil }
+        return try await service.agents()
+    }
 }
+

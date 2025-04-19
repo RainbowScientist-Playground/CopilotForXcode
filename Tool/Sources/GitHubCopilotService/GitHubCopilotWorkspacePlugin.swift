@@ -21,7 +21,7 @@ public final class GitHubCopilotWorkspacePlugin: WorkspacePlugin {
     }
 
     func createGitHubCopilotService() throws -> GitHubCopilotService {
-        let newService = try GitHubCopilotService(projectRootURL: projectRootURL)
+        let newService = try GitHubCopilotService(projectRootURL: projectRootURL, workspaceURL: workspaceURL)
         Task {
             try await Task.sleep(nanoseconds: 1_000_000_000)
             finishLaunchingService()

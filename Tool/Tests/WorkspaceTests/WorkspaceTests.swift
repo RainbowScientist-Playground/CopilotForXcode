@@ -1,24 +1,24 @@
 import XCTest
 import Foundation
-@testable import ConversationTab
+@testable import Workspace
 
-class ContextUtilsTests: XCTestCase {
+class WorkspaceFileTests: XCTestCase {
     func testMatchesPatterns() {
         let url1 = URL(fileURLWithPath: "/path/to/file.swift")
         let url2 = URL(fileURLWithPath: "/path/to/.git")
         let patterns = [".git", ".svn"]
 
-        XCTAssertTrue(ContextUtils.matchesPatterns(url2, patterns: patterns))
-        XCTAssertFalse(ContextUtils.matchesPatterns(url1, patterns: patterns))
+        XCTAssertTrue(WorkspaceFile.matchesPatterns(url2, patterns: patterns))
+        XCTAssertFalse(WorkspaceFile.matchesPatterns(url1, patterns: patterns))
     }
 
     func testIsXCWorkspace() throws {
         let tmpDir = try createTemporaryDirectory()
         do {
             let xcworkspaceURL = try createSubdirectory(in: tmpDir, withName: "myWorkspace.xcworkspace")
-            XCTAssertFalse(ContextUtils.isXCWorkspace(xcworkspaceURL))
+            XCTAssertFalse(WorkspaceFile.isXCWorkspace(xcworkspaceURL))
             let xcworkspaceDataURL = try createFile(in: xcworkspaceURL, withName: "contents.xcworkspacedata", contents: "")
-            XCTAssertTrue(ContextUtils.isXCWorkspace(xcworkspaceURL))
+            XCTAssertTrue(WorkspaceFile.isXCWorkspace(xcworkspaceURL))
         } catch {
             deleteDirectoryIfExists(at: tmpDir)
             throw error
@@ -30,9 +30,9 @@ class ContextUtilsTests: XCTestCase {
         let tmpDir = try createTemporaryDirectory()
         do {
             let xcprojectURL = try createSubdirectory(in: tmpDir, withName: "myProject.xcodeproj")
-            XCTAssertFalse(ContextUtils.isXCProject(xcprojectURL))
+            XCTAssertFalse(WorkspaceFile.isXCProject(xcprojectURL))
             let xcprojectDataURL = try createFile(in: xcprojectURL, withName: "project.pbxproj", contents: "")
-            XCTAssertTrue(ContextUtils.isXCProject(xcprojectURL))
+            XCTAssertTrue(WorkspaceFile.isXCProject(xcprojectURL))
         } catch {
             deleteDirectoryIfExists(at: tmpDir)
             throw error
@@ -48,7 +48,7 @@ class ContextUtilsTests: XCTestCase {
             _ = try createFile(in: tmpDir, withName: "file1.swift", contents: "")
             _ = try createFile(in: tmpDir, withName: "file2.swift", contents: "")
             _ = try createSubdirectory(in: tmpDir, withName: ".git")
-            let files = ContextUtils.getFilesInActiveWorkspace(workspaceURL: xcprojectURL, workspaceRootURL: tmpDir)
+            let files = WorkspaceFile.getFilesInActiveWorkspace(workspaceURL: xcprojectURL, workspaceRootURL: tmpDir)
             let fileNames = files.map { $0.url.lastPathComponent }
             XCTAssertEqual(files.count, 2)
             XCTAssertTrue(fileNames.contains("file1.swift"))
@@ -90,7 +90,7 @@ class ContextUtilsTests: XCTestCase {
             // Files under unrelated directories should be excluded
             _ = try createFile(in: tmpDir, withName: "unrelatedFile1.swift", contents: "")
 
-            let files = ContextUtils.getFilesInActiveWorkspace(workspaceURL: xcWorkspaceURL, workspaceRootURL: myWorkspaceRoot)
+            let files = WorkspaceFile.getFilesInActiveWorkspace(workspaceURL: xcWorkspaceURL, workspaceRootURL: myWorkspaceRoot)
             let fileNames = files.map { $0.url.lastPathComponent }
             XCTAssertEqual(files.count, 2)
             XCTAssertTrue(fileNames.contains("file1.swift"))
@@ -109,7 +109,7 @@ class ContextUtilsTests: XCTestCase {
             _ = try createFileFor_contents_dot_xcworkspacedata(directory: xcworkspaceURL, fileRefs: [
                 "container:myProject.xcodeproj",
                 "group:myDependency"])
-            let subprojectURLs = ContextUtils.getSubprojectURLs(in: xcworkspaceURL)
+            let subprojectURLs = WorkspaceFile.getSubprojectURLs(in: xcworkspaceURL)
             XCTAssertEqual(subprojectURLs.count, 2)
             XCTAssertEqual(subprojectURLs[0].path, tmpDir.path)
             XCTAssertEqual(subprojectURLs[1].path, tmpDir.appendingPathComponent("myDependency").path)
@@ -147,7 +147,7 @@ class ContextUtilsTests: XCTestCase {
            </Workspace>
         """.data(using: .utf8)!
 
-        let subprojectURLs = ContextUtils.getSubprojectURLs(workspaceURL: workspaceURL, data: xcworkspaceData)
+        let subprojectURLs = WorkspaceFile.getSubprojectURLs(workspaceURL: workspaceURL, data: xcworkspaceData)
         XCTAssertEqual(subprojectURLs.count, 5)
         XCTAssertEqual(subprojectURLs[0].path, "/path/to/tryapp")
         XCTAssertEqual(subprojectURLs[1].path, "/path/to")

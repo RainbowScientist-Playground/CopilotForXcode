@@ -15,6 +15,7 @@ import XcodeInspector
 import XPCShared
 import GitHubCopilotViewModel
 import StatusBarItemView
+import HostAppActivator
 
 let bundleIdentifierBase = Bundle.main
     .object(forInfoDictionaryKey: "BUNDLE_IDENTIFIER_BASE") as! String
@@ -46,7 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var xpcController: XPCController?
     let updateChecker =
         UpdateChecker(
-            hostBundle: Bundle(url: locateHostBundleURL(url: Bundle.main.bundleURL)),
+            hostBundle: Bundle(url: HostAppURL!),
             checkerDelegate: ExtensionUpdateCheckerDelegate()
         )
     var xpcExtensionService: XPCExtensionService?
@@ -74,6 +75,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func quit() {
+        if let hostApp = getRunningHostApp() {
+            hostApp.terminate()
+        }
+
+        // Start shutdown process in a task
         Task { @MainActor in
             await service.prepareForExit()
             await xpcController?.quit()
@@ -81,13 +87,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    @objc func openCopilotForXcode() {
-        let task = Process()
-        let appPath = locateHostBundleURL(url: Bundle.main.bundleURL)
-        task.launchPath = "/usr/bin/open"
-        task.arguments = [appPath.absoluteString]
-        task.launch()
-        task.waitUntilExit()
+    @objc func openCopilotForXcodeSettings() {
+        try? launchHostAppSettings()
     }
     
     @objc func signIntoGitHub() {
@@ -179,10 +180,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     .userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                     app.isUserOfService
                 else { continue }
-                if NSWorkspace.shared.runningApplications.contains(where: \.isUserOfService) {
-                    continue
+                
+                // Check if Xcode is running
+                let isXcodeRunning = NSWorkspace.shared.runningApplications.contains { 
+                    $0.bundleIdentifier == "com.apple.dt.Xcode" 
                 }
-                quit()
+                
+                if !isXcodeRunning {
+                    Logger.client.info("No Xcode instances running, preparing to quit")
+                    quit()
+                }
             }
         }
     }
@@ -446,20 +453,6 @@ extension NSRunningApplication {
             bundleIdentifierBase,
         ].contains(bundleIdentifier)
     }
-}
-
-func locateHostBundleURL(url: URL) -> URL {
-    var nextURL = url
-    while nextURL.path != "/" {
-        nextURL = nextURL.deletingLastPathComponent()
-        if nextURL.lastPathComponent.hasSuffix(".app") {
-            return nextURL
-        }
-    }
-    let devAppURL = url
-        .deletingLastPathComponent()
-        .appendingPathComponent("GitHub Copilot for Xcode Dev.app")
-    return devAppURL
 }
 
 struct CLSMessage {

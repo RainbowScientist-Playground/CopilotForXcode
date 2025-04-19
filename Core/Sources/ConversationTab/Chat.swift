@@ -22,8 +22,9 @@ public struct DisplayedChatMessage: Equatable {
     public var followUp: ConversationFollowUp? = nil
     public var suggestedTitle: String? = nil
     public var errorMessage: String? = nil
+    public var steps: [ConversationProgressStep] = []
 
-    public init(id: String, role: Role, text: String, references: [ConversationReference] = [], followUp: ConversationFollowUp? = nil, suggestedTitle: String? = nil, errorMessage: String? = nil) {
+    public init(id: String, role: Role, text: String, references: [ConversationReference] = [], followUp: ConversationFollowUp? = nil, suggestedTitle: String? = nil, errorMessage: String? = nil, steps: [ConversationProgressStep] = []) {
         self.id = id
         self.role = role
         self.text = text
@@ -31,6 +32,7 @@ public struct DisplayedChatMessage: Equatable {
         self.followUp = followUp
         self.suggestedTitle = suggestedTitle
         self.errorMessage = errorMessage
+        self.steps = steps
     }
 }
 
@@ -282,7 +284,8 @@ struct Chat {
                         },
                         followUp: message.followUp,
                         suggestedTitle: message.suggestedTitle,
-                        errorMessage: message.errorMessage
+                        errorMessage: message.errorMessage,
+                        steps: message.steps
                     ))
 
                     return all

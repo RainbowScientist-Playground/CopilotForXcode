@@ -31,12 +31,11 @@ extension AppState {
 extension CopilotModelManager {
     static func getAvailableChatLLMs() -> [LLMModel] {
         let LLMs = CopilotModelManager.getAvailableLLMs()
-        let availableModels = LLMs.filter(
+        return LLMs.filter(
             { $0.scopes.contains(.chatPanel) }
         ).map {
             LLMModel(modelName: $0.modelName, modelFamily: $0.modelFamily)
         }
-        return availableModels.isEmpty ? [defaultModel] : availableModels
     }
 }
 
@@ -50,6 +49,7 @@ struct ModelPicker: View {
     @State private var selectedModel = defaultModel.modelName
     @State private var isHovered = false
     @State private var isPressed = false
+    static var lastRefreshModelsTime: Date = .init(timeIntervalSince1970: 0)
 
     init() {
         self.updateCurrentModel()
@@ -66,15 +66,23 @@ struct ModelPicker: View {
     var body: some View {
         WithPerceptionTracking {
             Menu(selectedModel) {
-                ForEach(models, id: \.self) { option in
+                if models.isEmpty {
                     Button {
-                        selectedModel = option.modelName
-                        AppState.shared.setSelectedModel(option)
+                        // No action needed
                     } label: {
-                        if selectedModel == option.modelName {
-                            Text("✓ \(option.modelName)")
-                        } else {
-                            Text("    \(option.modelName)")
+                        Text("Loading...")
+                    }
+                } else {
+                    ForEach(models, id: \.self) { option in
+                        Button {
+                            selectedModel = option.modelName
+                            AppState.shared.setSelectedModel(option)
+                        } label: {
+                            if selectedModel == option.modelName {
+                                Text("✓ \(option.modelName)")
+                            } else {
+                                Text("    \(option.modelName)")
+                            }
                         }
                     }
                 }
@@ -108,6 +116,12 @@ struct ModelPicker: View {
 
     @MainActor
     func refreshModels() async {
+        let now = Date()
+        if now.timeIntervalSince(Self.lastRefreshModelsTime) < 60 {
+            return
+        }
+
+        Self.lastRefreshModelsTime = now
         let copilotModels = await SharedChatService.shared.copilotModels()
         if !copilotModels.isEmpty {
             CopilotModelManager.updateLLMs(copilotModels)

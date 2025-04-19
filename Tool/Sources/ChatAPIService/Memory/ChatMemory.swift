@@ -53,5 +53,20 @@ extension ChatMessage {
         if let errorMessage = message.errorMessage {
             self.errorMessage = (self.errorMessage ?? "") + errorMessage
         }
+        
+        // merge steps
+        if !message.steps.isEmpty {
+            var mergedSteps = self.steps
+            
+            for newStep in message.steps {
+                if let index = mergedSteps.firstIndex(where: { $0.id == newStep.id }) {
+                    mergedSteps[index] = newStep
+                } else {
+                    mergedSteps.append(newStep)
+                }
+            }
+            
+            self.steps = mergedSteps
+        }
     }
 }

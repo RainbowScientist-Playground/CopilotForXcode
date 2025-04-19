@@ -20,7 +20,7 @@ public class CurrentEditorSkill: ConversationSkill {
         return params.skillId == self.id
     }
     
-    public func resolveSkill(request: ConversationContextRequest, completion: (AnyJSONRPCResponse) -> Void){
+    public func resolveSkill(request: ConversationContextRequest, completion: JSONRPCResponseHandler){
         let uri: String? = self.currentFile.url.absoluteString
         completion(
             AnyJSONRPCResponse(id: request.id,

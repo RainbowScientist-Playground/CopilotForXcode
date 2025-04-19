@@ -1,6 +1,7 @@
 import CopilotForXcodeKit
 import Foundation
 import CodableWrappers
+import LanguageServerProtocol
 
 public protocol ConversationServiceType {
     func createConversation(_ request: ConversationRequest, workspace: WorkspaceInfo) async throws
@@ -10,6 +11,8 @@ public protocol ConversationServiceType {
     func copyCode(request: CopyCodeRequest, workspace: WorkspaceInfo) async throws
     func templates(workspace: WorkspaceInfo) async throws -> [ChatTemplate]?
     func models(workspace: WorkspaceInfo) async throws -> [CopilotModel]?
+    func notifyDidChangeWatchedFiles(_ event: DidChangeWatchedFilesEvent, workspace: WorkspaceInfo) async throws
+    func agents(workspace: WorkspaceInfo) async throws -> [ChatAgent]?
 }
 
 public protocol ConversationServiceProvider {
@@ -20,6 +23,8 @@ public protocol ConversationServiceProvider {
     func copyCode(_ request: CopyCodeRequest) async throws
     func templates() async throws -> [ChatTemplate]?
     func models() async throws -> [CopilotModel]?
+    func notifyDidChangeWatchedFiles(_ event: DidChangeWatchedFilesEvent, workspace: WorkspaceInfo) async throws
+    func agents() async throws -> [ChatAgent]?
 }
 
 public struct FileReference: Hashable, Codable, Equatable {
@@ -150,5 +155,39 @@ public struct ConversationFollowUp: Codable, Equatable {
         self.message = message
         self.id = id
         self.type = type
+    }
+}
+
+public struct ConversationProgressStep: Codable, Equatable, Identifiable {
+    public enum StepStatus: String, Codable {
+        case running, completed, failed, cancelled
+    }
+    
+    public struct StepError: Codable, Equatable {
+        public let message: String
+    }
+    
+    public let id: String
+    public let title: String
+    public let description: String?
+    public var status: StepStatus
+    public let error: StepError?
+    
+    public init(id: String, title: String, description: String?, status: StepStatus, error: StepError?) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.status = status
+        self.error = error
+    }
+}
+
+public struct DidChangeWatchedFilesEvent: Codable {
+    public var workspaceUri: String
+    public var changes: [FileEvent]
+    
+    public init(workspaceUri: String, changes: [FileEvent]) {
+        self.workspaceUri = workspaceUri
+        self.changes = changes
     }
 }

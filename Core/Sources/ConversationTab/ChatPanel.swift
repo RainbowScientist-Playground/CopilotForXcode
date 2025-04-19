@@ -10,6 +10,7 @@ import ChatService
 import SwiftUIFlowLayout
 import XcodeInspector
 import ChatTab
+import Workspace
 
 private let r: Double = 8
 
@@ -336,7 +337,8 @@ struct ChatHistoryItem: View {
                     references: message.references,
                     followUp: message.followUp,
                     errorMessage: message.errorMessage,
-                    chat: chat
+                    chat: chat,
+                    steps: message.steps
                 )
             case .system:
                 FunctionMessage(chat: chat, id: message.id, text: text)
@@ -481,6 +483,8 @@ struct ChatPanelInputArea: View {
         }
         .buttonStyle(.plain)
     }
+    
+    enum ShowingType { case template, agent }
 
     struct InputAreaTextEditor: View {
         @Perception.Bindable var chat: StoreOf<Chat>
@@ -489,7 +493,9 @@ struct ChatPanelInputArea: View {
         @State private var isFilePickerPresented = false
         @State private var allFiles: [FileReference] = []
         @State private var filteredTemplates: [ChatTemplate] = []
+        @State private var filteredAgent: [ChatAgent] = []
         @State private var showingTemplates = false
+        @State private var dropDownShowingType: ShowingType? = nil
 
         var body: some View {
             WithPerceptionTracking {
@@ -510,10 +516,10 @@ struct ChatPanelInputArea: View {
                                 isEditable: true,
                                 maxHeight: 400,
                                 onSubmit: {
-                                    if (!showingTemplates) {
+                                    if (dropDownShowingType == nil) {
                                         submitChatMessage()
                                     }
-                                    showingTemplates = false
+                                    dropDownShowingType = nil
                                 },
                                 completions: chatAutoCompletion
                             )
@@ -523,8 +529,7 @@ struct ChatPanelInputArea: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .onChange(of: chat.typedMessage) { newValue in
                                 Task {
-                                    filteredTemplates = await chatTemplateCompletion(text: newValue)
-                                    showingTemplates = !filteredTemplates.isEmpty
+                                    await onTypedMessageChanged(newValue: newValue)
                                 }
                             }
                         }
@@ -584,14 +589,7 @@ struct ChatPanelInputArea: View {
                     .padding(.top, -4)
                 }
                 .overlay(alignment: .top) {
-                    if showingTemplates {
-                        ChatTemplateDropdownView(templates: $filteredTemplates) { template in
-                            chat.typedMessage = "/" + template.id + " "
-                            if template.id == "releaseNotes" {
-                                submitChatMessage()
-                            }
-                        }
-                    }
+                    dropdownOverlay
                 }
                 .onAppear() {
                     subscribeToActiveDocumentChangeEvent()
@@ -623,7 +621,38 @@ struct ChatPanelInputArea: View {
                 }
             }
         }
+        
+        private var dropdownOverlay: some View {
+            Group {
+                if dropDownShowingType != nil {
+                    if dropDownShowingType == .template {
+                        ChatDropdownView(items: $filteredTemplates, prefixSymbol: "/") { template in
+                            chat.typedMessage = "/" + template.id + " "
+                            if template.id == "releaseNotes" {
+                                submitChatMessage()
+                            }
+                        }
+                    } else if dropDownShowingType == .agent {
+                        ChatDropdownView(items: $filteredAgent, prefixSymbol: "@") { agent in
+                            chat.typedMessage = "@" + agent.id + " "
+                        }
+                    }
+                }
+            }
+        }
 
+        func onTypedMessageChanged(newValue: String) async {
+            if newValue.hasPrefix("/") {
+                filteredTemplates = await chatTemplateCompletion(text: newValue)
+                dropDownShowingType = filteredTemplates.isEmpty ? nil : .template
+            } else if newValue.hasPrefix("@") {
+                filteredAgent = await chatAgentCompletion(text: newValue)
+                dropDownShowingType = filteredAgent.isEmpty ? nil : .agent
+            } else {
+                dropDownShowingType = nil
+            }
+        }
+        
         private var attachedFilesView: some View {
             FlowLayout(mode: .scrollable, items: [chat.state.currentEditor] + chat.state.selectedFiles, itemSpacing: 4) { file in
                 if let select = file {
@@ -691,6 +720,22 @@ struct ChatPanelInputArea: View {
             return templates.filter { $0.scopes.contains(.chatPanel) &&
                 $0.id.hasPrefix(prefix) && !skippedTemplates.contains($0.id)}
         }
+        
+        func chatAgentCompletion(text: String) async -> [ChatAgent] {
+            guard text.count >= 1 && text.first == "@" else { return [] }
+            let prefix = text.dropFirst()
+            var chatAgents = await SharedChatService.shared.loadChatAgents() ?? []
+            
+            if let index = chatAgents.firstIndex(where: { $0.slug == "project" }) {
+                let projectAgent = chatAgents[index]
+                chatAgents[index] = .init(slug: "workspace", name: "workspace", description: "Ask about your workspace", avatarUrl: projectAgent.avatarUrl)
+            }
+            
+            /// only enable the @workspace
+            let includedAgents = ["workspace"]
+            
+            return chatAgents.filter { $0.slug.hasPrefix(prefix) && includedAgents.contains($0.slug) }
+        }
 
         func chatAutoCompletion(text: String, proposed: [String], range: NSRange) -> [String] {
             guard text.count == 1 else { return [] }
@@ -716,11 +761,24 @@ struct ChatPanelInputArea: View {
             return result
         }
         func subscribeToActiveDocumentChangeEvent() {
-            XcodeInspector.shared.$activeDocumentURL.receive(on: DispatchQueue.main)
-                .sink { newDocURL in
-                    if supportedFileExtensions.contains(newDocURL?.pathExtension ?? "") {
-                        let currentEditor = FileReference(url: newDocURL!, isCurrentEditor: true)
-                        chat.send(.setCurrentEditor(currentEditor))
+            Publishers.CombineLatest(
+                XcodeInspector.shared.$latestActiveXcode,
+                XcodeInspector.shared.$activeDocumentURL
+                    .removeDuplicates()
+                )
+                .receive(on: DispatchQueue.main)
+                .sink { newXcode, newDocURL in
+                    // First check for realtimeWorkspaceURL if activeWorkspaceURL is nil
+                    if let realtimeURL = newXcode?.realtimeDocumentURL, newDocURL == nil {
+                        if supportedFileExtensions.contains(realtimeURL.pathExtension) {
+                            let currentEditor = FileReference(url: realtimeURL, isCurrentEditor: true)
+                            chat.send(.setCurrentEditor(currentEditor))
+                        }
+                    } else {
+                        if supportedFileExtensions.contains(newDocURL?.pathExtension ?? "") {
+                            let currentEditor = FileReference(url: newDocURL!, isCurrentEditor: true)
+                            chat.send(.setCurrentEditor(currentEditor))
+                        }
                     }
                 }
                 .store(in: &cancellable)

@@ -1,7 +1,7 @@
 import Foundation
 import LaunchAgentManager
 
-extension LaunchAgentManager {
+public extension LaunchAgentManager {
     init() {
         self.init(
             serviceIdentifier: Bundle.main

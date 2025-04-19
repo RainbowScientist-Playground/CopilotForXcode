@@ -93,10 +93,21 @@
       }
     },
     {
+      "skippedTests" : [
+        "FileChangeWatcherServiceTests\/testProjectMonitoringDetectsAddedProjects()",
+        "FileChangeWatcherServiceTests\/testProjectMonitoringDetectsRemovedProjects()"
+      ],
+      "target" : {
+        "containerPath" : "container:Tool",
+        "identifier" : "WorkspaceTests",
+        "name" : "WorkspaceTests"
+      }
+    },
+    {
       "target" : {
         "containerPath" : "container:Core",
-        "identifier" : "ConversationTabTests",
-        "name" : "ConversationTabTests"
+        "identifier" : "ChatServiceTests",
+        "name" : "ChatServiceTests"
       }
     }
   ],

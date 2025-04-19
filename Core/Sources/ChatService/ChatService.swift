@@ -11,6 +11,8 @@ import Persist
 import PersistMiddleware
 import ChatTab
 import Logger
+import Workspace
+import XcodeInspector
 
 public protocol ChatServiceType {
     var memory: ContextAwareAutoManagedChatMemory { get set }
@@ -30,6 +32,8 @@ public final class ChatService: ChatServiceType, ObservableObject {
     private let conversationProvider: ConversationServiceProvider?
     private let conversationProgressHandler: ConversationProgressHandler
     private let conversationContextHandler: ConversationContextHandler = ConversationContextHandlerImpl.shared
+    // sync all the files in the workspace to watch for changes.
+    private let watchedFilesHandler: WatchedFilesHandler = WatchedFilesHandlerImpl.shared
     private var cancellables = Set<AnyCancellable>()
     private var activeRequestId: String?
     private(set) public var conversationId: String?
@@ -47,6 +51,7 @@ public final class ChatService: ChatServiceType, ObservableObject {
         
         subscribeToNotifications()
         subscribeToConversationContextRequest()
+        subscribeToWatchedFilesHandler()
     }
     
     private func subscribeToNotifications() {
@@ -80,6 +85,14 @@ public final class ChatService: ChatServiceType, ObservableObject {
             }
         }).store(in: &cancellables)
     }
+    
+    private func subscribeToWatchedFilesHandler() {
+        self.watchedFilesHandler.onWatchedFiles.sink(receiveValue: { [weak self] (request, completion) in
+            guard let self, request.params!.workspaceUri != "/" else { return }
+            self.startFileChangeWatcher()
+        }).store(in: &cancellables)
+    }
+    
     public static func service(for chatTabInfo: ChatTabInfo) -> ChatService {
         let provider = BuiltinExtensionConversationServiceProvider(
             extension: GitHubCopilotExtension.self
@@ -144,8 +157,12 @@ public final class ChatService: ChatServiceType, ObservableObject {
         let ignoredSkills: [String] = skillCapabilities.filter {
             !supportedSkills.contains($0)
         }
+        
+        /// replace the `@workspace` to `@project`
+        let newContent = replaceFirstWord(in: content, from: "@workspace", to: "@project")
+        
         let request = ConversationRequest(workDoneToken: workDoneToken,
-                                          content: content,
+                                          content: newContent,
                                           workspaceFolder: "",
                                           skills: skillCapabilities,
                                           ignoredSkills: ignoredSkills,
@@ -321,6 +338,7 @@ public final class ChatService: ChatServiceType, ObservableObject {
         let id = progress.turnId
         var content = ""
         var references: [ConversationReference] = []
+        var steps: [ConversationProgressStep] = []
 
         if let reply = progress.reply {
             content = reply
@@ -330,13 +348,18 @@ public final class ChatService: ChatServiceType, ObservableObject {
             references = progressReferences.toConversationReferences()
         }
         
-        if content.isEmpty && references.isEmpty {
+        if let progressSteps = progress.steps, !progressSteps.isEmpty {
+            steps = progressSteps
+        }
+        
+        if content.isEmpty && references.isEmpty && steps.isEmpty {
             return
         }
         
         // create immutable copies
         let messageContent = content
         let messageReferences = references
+        let messageSteps = steps
 
         Task {
             let message = ChatMessage(
@@ -345,7 +368,8 @@ public final class ChatService: ChatServiceType, ObservableObject {
                 clsTurnID: id,
                 role: .assistant,
                 content: messageContent,
-                references: messageReferences
+                references: messageReferences,
+                steps: messageSteps
             )
 
             // will persist in resetOngoingRequest()
@@ -424,10 +448,24 @@ public final class ChatService: ChatServiceType, ObservableObject {
         activeRequestId = nil
         isReceivingMessage = false
         
-        // The message of progress report could change rapidly
-        // Directly upsert the last chat message of history here
-        // Possible repeat upsert, but no harm.
+        
         Task {
+            // mark running steps to cancelled
+            await mutateHistory({ history in
+                guard !history.isEmpty,
+                      let lastIndex = history.indices.last,
+                      history[lastIndex].role == .assistant else { return }
+                
+                for i in 0..<history[lastIndex].steps.count {
+                    if history[lastIndex].steps[i].status == .running {
+                        history[lastIndex].steps[i].status = .cancelled
+                    }
+                }
+            })
+            
+            // The message of progress report could change rapidly
+            // Directly upsert the last chat message of history here
+            // Possible repeat upsert, but no harm.
             if let message = await memory.history.last {
                 saveChatMessageToStorage(message)
             }
@@ -465,6 +503,7 @@ public final class ChatService: ChatServiceType, ObservableObject {
 
 public final class SharedChatService {
     public var chatTemplates: [ChatTemplate]? = nil
+    public var chatAgents: [ChatAgent]? = nil
     private let conversationProvider: ConversationServiceProvider?
     
     public static let shared = SharedChatService.service()
@@ -499,6 +538,21 @@ public final class SharedChatService {
         guard let models = try? await conversationProvider?.models() else { return [] }
         return models
     }
+    
+    public func loadChatAgents() async -> [ChatAgent]? {
+        guard self.chatAgents == nil else { return self.chatAgents }
+        
+        do {
+            if let chatAgents = (try await conversationProvider?.agents()) {
+                self.chatAgents = chatAgents
+                return chatAgents
+            }
+        } catch {
+            // handle error if desired
+        }
+
+        return nil
+    }
 }
 
 
@@ -531,6 +585,37 @@ extension ChatService {
     func fetchAllChatMessagesFromStorage() -> [ChatMessage] {
         return ChatMessageStore.getAll(by: self.chatTabInfo.id, metadata: .init(workspacePath: self.chatTabInfo.workspacePath, username: self.chatTabInfo.username))
     }
+    
+    /// for file change watcher
+    func startFileChangeWatcher() {
+        Task { [weak self] in
+            guard let self else { return }
+            let workspaceURL = URL(fileURLWithPath: self.chatTabInfo.workspacePath)
+            let projectURL = WorkspaceXcodeWindowInspector.extractProjectURL(workspaceURL: workspaceURL, documentURL: nil) ?? workspaceURL
+            await FileChangeWatcherServicePool.shared.watch(
+                for: workspaceURL
+            ) { fileEvents in
+                Task { [weak self] in
+                    guard let self else { return }
+                    try? await self.conversationProvider?.notifyDidChangeWatchedFiles(
+                        .init(workspaceUri: projectURL.path, changes: fileEvents),
+                        workspace: .init(workspaceURL: workspaceURL, projectURL: projectURL)
+                    )
+                }
+            }
+        }
+    }
+}
+
+func replaceFirstWord(in content: String, from oldWord: String, to newWord: String) -> String {
+    let pattern = "^\(oldWord)\\b"
+    
+    if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+        let range = NSRange(location: 0, length: content.utf16.count)
+        return regex.stringByReplacingMatches(in: content, options: [], range: range, withTemplate: newWord)
+    }
+    
+    return content
 }
 
 extension Array where Element == Reference {

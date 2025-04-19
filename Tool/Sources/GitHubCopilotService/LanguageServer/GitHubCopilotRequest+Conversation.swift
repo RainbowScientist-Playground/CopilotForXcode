@@ -68,6 +68,7 @@ public struct ConversationProgressReport: BaseConversationProgress {
     public let turnId: String
     public let reply: String?
     public let references: [Reference]?
+    public let steps: [ConversationProgressStep]?
 }
 
 public struct ConversationProgressEnd: BaseConversationProgress {
@@ -136,6 +137,7 @@ struct TurnCreateParams: Codable {
     var ignoredSkills: [String]?
     var references: [Reference]?
     var model: String?
+    var workspaceFolder: String?
 }
 
 // MARK: Copy
@@ -160,3 +162,14 @@ public struct ConversationContextParams: Codable {
 }
 
 public typealias ConversationContextRequest = JSONRPCRequest<ConversationContextParams>
+
+
+// MARK: Watched Files
+
+public struct WatchedFilesParams: Codable {
+    public var workspaceUri: String
+    public var excludeGitignoredFiles: Bool
+    public var excludeIDEIgnoredFiles: Bool
+}
+
+public typealias WatchedFilesRequest = JSONRPCRequest<WatchedFilesParams>

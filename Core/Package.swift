@@ -178,7 +178,12 @@ let package = Package(
                     .product(name: "AXHelper", package: "Tool"),
                     .product(name: "ConversationServiceProvider", package: "Tool"),
                     .product(name: "GitHubCopilotService", package: "Tool"),
+                    .product(name: "Workspace", package: "Tool")
                 ]),
+            .testTarget(
+                name: "ChatServiceTests",
+                dependencies: ["ChatService"]
+            ),
 
             .target(
                 name: "ConversationTab",
@@ -195,10 +200,6 @@ let package = Package(
                     .product(name: "SwiftUIFlowLayout", package: "swiftui-flow-layout"),
                     .product(name: "Persist", package: "Tool")
                 ]
-            ),
-            .testTarget(
-                name: "ConversationTabTests",
-                dependencies: ["ConversationTab"]
             ),
         
         // MARK: - UI
@@ -218,6 +219,7 @@ let package = Package(
                     .product(name: "ChatTab", package: "Tool"),
                     .product(name: "Logger", package: "Tool"),
                     .product(name: "CustomAsyncAlgorithms", package: "Tool"),
+                    .product(name: "HostAppActivator", package: "Tool"),
                     .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
                     .product(name: "MarkdownUI", package: "swift-markdown-ui"),
                     .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),

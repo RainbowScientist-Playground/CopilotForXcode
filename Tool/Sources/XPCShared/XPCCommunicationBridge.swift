@@ -1,5 +1,6 @@
 import Foundation
 import Logger
+import AppKit
 
 public enum XPCCommunicationBridgeError: Swift.Error, LocalizedError {
     case failedToCreateXPCConnection
@@ -79,3 +80,18 @@ extension XPCCommunicationBridge {
     }
 }
 
+@available(macOS 13.0, *)
+public func showBackgroundPermissionAlert() {
+    let alert = NSAlert()
+    alert.messageText = "Background Permission Required"
+    alert.informativeText = "GitHub Copilot for Xcode needs permission to run in the background. Without this permission, features won't work correctly."
+    alert.alertStyle = .warning
+    
+    alert.addButton(withTitle: "Open Settings")
+    alert.addButton(withTitle: "Later")
+    
+    let response = alert.runModal()
+    if response == .alertFirstButtonReturn {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")!)
+    }
+}

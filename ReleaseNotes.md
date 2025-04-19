@@ -1,22 +1,17 @@
-### GitHub Copilot for Xcode 0.32.0
+### GitHub Copilot for Xcode 0.33.0
+
 **🚀 Highlights**
 
-* Model picker for selecting LLM model for chat
-* New `/releaseNotes` slash commands for easier access to release information
+* **New Models**: Claude 3.7 Sonnet and GPT 4.5 are now available in the Copilot Chat model selector.
+* **@workspace Context**: Ask questions about your entire codebase by referencing `@workspace` in Copilot Chat.
 
 **💪 Improvements**
 
-* Auto-switch focus between chat text field and file search bar
-* Support keyboard navigation for file picker in chat context
-* Enhanced instructions for granting accessibility and extension permissions
-* Improved accessibility for chat window
-* Redesigned notification and status bar menu styles
+* Open Copilot Chat with a single click from the Copilot for Xcode app
+* Clearer instructions for granting background permissions
 
 **🛠️ Bug Fixes**
 
-* Resolved compatibility issues with macOS 12
-* Fixed handling of invalid workspace switch event '/'
-* Corrected chat attachment file picker search path to respect workspace scope
-* Fixed icon display across different themes
-* Added support for previously unsupported file types (.md, .txt) in attachments
-* Adjusted incorrect margins in chat window
+* Resolved false alarms for sign-in and free plan limit notifications
+* Improved app launch performance
+* Fixed workspace and context update issues

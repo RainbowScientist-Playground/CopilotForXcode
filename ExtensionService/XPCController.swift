@@ -39,19 +39,38 @@ final class XPCController: XPCServiceDelegate {
     func createPingTask() {
         pingTask?.cancel()
         pingTask = Task { [weak self] in
+            var consecutiveFailures = 0
+            var backoffDelay = 1_000_000_000 // Start with 1 second
+            
             while !Task.isCancelled {
                 guard let self else { return }
                 do {
                     try await self.bridge.updateServiceEndpoint(self.xpcListener.endpoint)
-                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                    // Reset on success
+                    consecutiveFailures = 0
+                    backoffDelay = 1_000_000_000
+                    try await Task.sleep(nanoseconds: 60_000_000_000) // 60 seconds between successful pings
                 } catch {
-                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    consecutiveFailures += 1
+                    // Log only on 1st, 5th (31 sec), 10th failures, etc. to avoid flooding
+                    let shouldLog = consecutiveFailures == 1 || consecutiveFailures % 5 == 0
+                    
                     #if DEBUG
                     // No log, but you should run CommunicationBridge, too.
                     #else
-                    Logger.service
-                        .error("Failed to connect to bridge: \(error.localizedDescription)")
+                    if consecutiveFailures == 5 {
+                        if #available(macOS 13.0, *) {
+                            showBackgroundPermissionAlert()
+                        }
+                    }
+                    if shouldLog {
+                        Logger.service.error("Failed to connect to bridge (\(consecutiveFailures) consecutive failures): \(error.localizedDescription)")
+                    }
                     #endif
+                    
+                    // Exponential backoff with a cap
+                    backoffDelay = min(backoffDelay * 2, 120_000_000_000) // Cap at 120 seconds
+                    try await Task.sleep(nanoseconds: UInt64(backoffDelay))
                 }
             }
         }

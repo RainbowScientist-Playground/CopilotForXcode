@@ -16,6 +16,8 @@ struct BotMessage: View {
     let followUp: ConversationFollowUp?
     let errorMessage: String?
     let chat: StoreOf<Chat>
+    let steps: [ConversationProgressStep]
+    
     @Environment(\.colorScheme) var colorScheme
     @AppStorage(\.chatFontSize) var chatFontSize
 
@@ -114,6 +116,11 @@ struct BotMessage: View {
                             isReferencesPresented: $isReferencesPresented
                         )
                     }
+                }
+                
+                // progress step
+                if steps.count > 0 {
+                    ProgressStep(steps: steps)
                 }
 
                 ThemedMarkdownText(text: text, chat: chat)
@@ -219,6 +226,13 @@ struct ReferenceList: View {
 }
 
 struct BotMessage_Previews: PreviewProvider {
+    static let steps: [ConversationProgressStep] = [
+        .init(id: "001", title: "running step", description: "this is running step", status: .running, error: nil),
+        .init(id: "002", title: "completed step", description: "this is completed step", status: .completed, error: nil),
+        .init(id: "003", title: "failed step", description: "this is failed step", status: .failed, error: nil),
+        .init(id: "004", title: "cancelled step", description: "this is cancelled step", status: .cancelled, error: nil)
+    ]
+    
     static var previews: some View {
         let chatTabInfo = ChatTabInfo(id: "id", workspacePath: "path", username: "name")
         BotMessage(
@@ -236,7 +250,8 @@ struct BotMessage_Previews: PreviewProvider {
             ), count: 2),
             followUp: ConversationFollowUp(message: "followup question", id: "id", type: "type"),
             errorMessage: "Sorry, an error occurred while generating a response.",
-            chat: .init(initialState: .init(), reducer: { Chat(service: ChatService.service(for: chatTabInfo)) })
+            chat: .init(initialState: .init(), reducer: { Chat(service: ChatService.service(for: chatTabInfo)) }),
+            steps: steps
         )
         .padding()
         .fixedSize(horizontal: true, vertical: true)

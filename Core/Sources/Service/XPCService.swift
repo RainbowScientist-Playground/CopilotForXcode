@@ -6,6 +6,7 @@ import Logger
 import Preferences
 import Status
 import XPCShared
+import HostAppActivator
 
 public class XPCService: NSObject, XPCServiceProtocol {
     // MARK: - Service
@@ -152,12 +153,23 @@ public class XPCService: NSObject, XPCServiceProtocol {
     }
 
     public func openChat(
-        editorContent: Data,
-        withReply reply: @escaping (Data?, Error?) -> Void
+        withReply reply: @escaping (Error?) -> Void
     ) {
-        let handler = PseudoCommandHandler()
-        handler.openChat(forceDetach: true)
-        reply(nil, nil)
+        Task {
+            do {
+                // Check if app is already running
+                if let _ = getRunningHostApp() {
+                    // App is already running, use the chat service
+                    let handler = PseudoCommandHandler()
+                    handler.openChat(forceDetach: true)
+                } else {
+                    try launchHostAppDefault()
+                }
+                reply(nil)
+            } catch {
+                reply(error)
+            }
+        }
     }
 
     public func promptToCode(
@@ -236,4 +248,3 @@ struct NoAccessToAccessibilityAPIError: Error, LocalizedError {
 
     init() {}
 }
-

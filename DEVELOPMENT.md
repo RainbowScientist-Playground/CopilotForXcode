@@ -47,6 +47,21 @@ Most of the logics are implemented inside the package `Core` and `Tool`.
 
 Just run both the `ExtensionService`, `CommunicationBridge` and the `EditorExtension` Target. Read [Testing Your Source Editor Extension](https://developer.apple.com/documentation/xcodekit/testing_your_source_editor_extension) for more details.
 
+## Local Build
+
+To build the application locally, follow these steps:
+
+1. Navigate to the Script directory and run the build scripts:
+
+   ```sh
+   cd ./Script
+   sh ./uninstall-app.sh    # Remove any previous installation
+   rm -rf ../build          # Clean the build directory
+   sh ./localbuild-app.sh   # Build a fresh copy of the app
+   ```
+
+2. After successful build, the application will be available in the build directory. Copy `GitHub Copilot for Xcode.app` to your Applications folder to test it locally.
+
 ## SwiftUI Previews
 
 Looks like SwiftUI Previews are not very happy with Objective-C packages when running with app targets. To use previews, please switch schemes to the package product targets.

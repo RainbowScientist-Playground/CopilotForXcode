@@ -43,14 +43,12 @@ You can receive auto-complete type suggestions from GitHub Copilot either by sta
    </p>
 
 
-1. A background item will be added to enable Copilot to start when `GitHub Copilot for Xcode` is opened.
+1. A background item will be added to enable the GitHub Copilot for Xcode extension app to connect to the host app. This permission is usually automatically added when first launching the app.
    <p align="center">
      <img alt="Screenshot of background item" src="./Docs/background-item.png" width="370" />
    </p>
 
-1. Two permissions are required: `Accessibility` and `Xcode Source Editor
-   Extension`. For more on why these permissions are required see
-   [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
+1. Three permissions are required for GitHub Copilot for Xcode to function properly: `Background`, `Accessibility`, and `Xcode Source Editor Extension`. For more details on why these permissions are required see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 
    The first time the application is run the `Accessibility` permission should be requested:
 

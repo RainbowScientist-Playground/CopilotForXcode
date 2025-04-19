@@ -8,16 +8,16 @@ import XPCShared
 import Logger
 
 @Reducer
-struct General {
+public struct General {
     @ObservableState
-    struct State: Equatable {
+    public struct State: Equatable {
         var xpcServiceVersion: String?
         var isAccessibilityPermissionGranted: ObservedAXStatus = .unknown
         var isExtensionPermissionGranted: ExtensionPermissionStatus = .unknown
         var isReloading = false
     }
 
-    enum Action: Equatable {
+    public enum Action: Equatable {
         case appear
         case setupLaunchAgentIfNeeded
         case openExtensionManager
@@ -35,7 +35,7 @@ struct General {
     
     struct ReloadStatusCancellableId: Hashable {}
     
-    var body: some ReducerOf<Self> {
+    public var body: some ReducerOf<Self> {
         Reduce { state, action in
             switch action {
             case .appear:
@@ -58,7 +58,7 @@ struct General {
                                 .setupLaunchAgentForTheFirstTimeIfNeeded()
                         } catch {
                             Logger.ui.error("Failed to setup launch agent. \(error.localizedDescription)")
-                            toast(error.localizedDescription, .error)
+                            toast("Operation failed: permission denied. This may be due to missing background permissions.", .error)
                         }
                         await send(.reloadStatus)
                     }
@@ -103,7 +103,7 @@ struct General {
                     } catch let error as XPCCommunicationBridgeError {
                         Logger.ui.error("Failed to reach communication bridge. \(error.localizedDescription)")
                         toast(
-                            "Failed to reach communication bridge. \(error.localizedDescription)",
+                            "Unable to connect to the communication bridge. The helper application didn't respond. This may be due to missing background permissions.",
                             .error
                         )
                         await send(.failedReloading)

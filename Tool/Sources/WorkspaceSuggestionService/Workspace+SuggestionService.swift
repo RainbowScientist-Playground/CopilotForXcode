@@ -88,7 +88,7 @@ public extension Workspace {
         )
 
         let clsStatus = await Status.shared.getCLSStatus()
-        if clsStatus.isErrorStatus {
+        if clsStatus.isErrorStatus && clsStatus.message.contains("Completions limit reached") {
             filespace.setError(clsStatus.message)
         } else {
             filespace.setError("")

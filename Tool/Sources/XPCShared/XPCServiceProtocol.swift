@@ -33,8 +33,7 @@ public protocol XPCServiceProtocol {
         withReply reply: @escaping (_ updatedContent: Data?, Error?) -> Void
     )
     func openChat(
-        editorContent: Data,
-        withReply reply: @escaping (Data?, Error?) -> Void
+        withReply reply: @escaping (Error?) -> Void
     )
     func promptToCode(
         editorContent: Data,
@@ -155,4 +154,3 @@ extension ExtensionServiceRequestType {
         }
     }
 }
-

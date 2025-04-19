@@ -18,13 +18,14 @@ final class ChatPanelWindow: NSWindow {
         minimizeWindow: @escaping () -> Void
     ) {
         self.minimizeWindow = minimizeWindow
+        // Initialize with zero rect initially to prevent flashing
         super.init(
             contentRect: .zero,
             styleMask: [.resizable, .titled, .miniaturizable, .fullSizeContentView, .closable],
             backing: .buffered,
-            defer: false
+            defer: true // Use defer to prevent window from appearing immediately
         )
-
+        
         titleVisibility = .hidden
         addTitlebarAccessoryViewController({
             let controller = NSTitlebarAccessoryViewController()
@@ -41,11 +42,13 @@ final class ChatPanelWindow: NSWindow {
         level = widgetLevel(1)
         collectionBehavior = [
             .fullScreenAuxiliary,
-            .transient,
+//            .transient,
             .fullScreenPrimary,
             .fullScreenAllowsTiling,
         ]
         hasShadow = true
+        
+        // Set contentView after basic configuration
         contentView = NSHostingView(
             rootView: ChatWindowView(
                 store: store,
@@ -56,8 +59,11 @@ final class ChatPanelWindow: NSWindow {
             )
             .environment(\.chatTabPool, chatTabPool)
         )
-        setIsVisible(true)
+        
+        // Initialize as invisible first
+        alphaValue = 0
         isPanelDisplayed = false
+        setIsVisible(true)
 
         storeObserver.observe { [weak self] in
             guard let self else { return }

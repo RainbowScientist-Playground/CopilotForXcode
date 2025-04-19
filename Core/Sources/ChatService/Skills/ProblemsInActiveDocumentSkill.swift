@@ -17,7 +17,7 @@ public class ProblemsInActiveDocumentSkill: ConversationSkill {
         return params.skillId == self.id
     }
 
-    public func resolveSkill(request: ConversationContextRequest, completion: @escaping (AnyJSONRPCResponse) -> Void) {
+    public func resolveSkill(request: ConversationContextRequest, completion: @escaping JSONRPCResponseHandler) {
         Task {
             let editor = await XcodeInspector.shared.getFocusedEditorContent()
             let result: JSONValue = JSONValue.hash([

@@ -1,6 +1,5 @@
 import SwiftUI
 import Perception
-import GitHubCopilotViewModel
 import SharedUIComponents
 
 struct ChatNoAXPermissionView: View {

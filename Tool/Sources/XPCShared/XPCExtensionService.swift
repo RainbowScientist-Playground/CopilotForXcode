@@ -148,11 +148,17 @@ public class XPCExtensionService {
         }
     }
 
-    public func openChat(editorContent: EditorContent) async throws -> UpdatedContent? {
-        try await suggestionRequest(
-            editorContent,
-            { $0.openChat }
-        )
+    public func openChat() async throws {
+        try await withXPCServiceConnected {
+            service, continuation in
+            service.openChat { error in
+                if let error {
+                    continuation.reject(error)
+                    return
+                }
+                continuation.resume(())
+            }
+        } as Void
     }
 
     public func promptToCode(editorContent: EditorContent) async throws -> UpdatedContent? {
@@ -171,7 +177,6 @@ public class XPCExtensionService {
             { service in { service.customCommand(id: id, editorContent: $0, withReply: $1) } }
         )
     }
-
 
     public func quitService() async throws {
         try await withXPCServiceConnectedWithoutLaunching {

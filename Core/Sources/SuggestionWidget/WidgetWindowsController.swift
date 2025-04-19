@@ -12,9 +12,9 @@ actor WidgetWindowsController: NSObject {
     let userDefaultsObservers = WidgetUserDefaultsObservers()
     var xcodeInspector: XcodeInspector { .shared }
 
-    let windows: WidgetWindows
-    let store: StoreOf<WidgetFeature>
-    let chatTabPool: ChatTabPool
+    nonisolated let windows: WidgetWindows
+    nonisolated let store: StoreOf<WidgetFeature>
+    nonisolated let chatTabPool: ChatTabPool
 
     var currentApplicationProcessIdentifier: pid_t?
 
@@ -233,6 +233,9 @@ extension WidgetWindowsController {
     }
 
     func generateWidgetLocation() -> WidgetLocation? {
+        // Default location when no active application/window
+        let defaultLocation = generateDefaultLocation()
+        
         if let application = xcodeInspector.latestActiveXcode?.appElement {
             if let focusElement = xcodeInspector.focusedEditor?.element,
                let parent = focusElement.parent,
@@ -303,11 +306,7 @@ extension WidgetWindowsController {
                         .first(where: { $0.identifier == "Xcode.WorkspaceWindow" }),
                         let rect = workspaceWindow.rect
                     else {
-                        return WidgetLocation(
-                            widgetFrame: .zero,
-                            tabFrame: .zero,
-                            defaultPanelLocation: .init(frame: .zero, alignPanelTop: false)
-                        )
+                        return defaultLocation
                     }
 
                     window = workspaceWindow
@@ -335,7 +334,23 @@ extension WidgetWindowsController {
                 )
             }
         }
-        return nil
+        return defaultLocation
+    }
+    
+    // Generate a default location when no workspace is opened
+    private func generateDefaultLocation() -> WidgetLocation {
+        let mainScreen = NSScreen.main ?? NSScreen.screens.first!
+        let chatPanelFrame = UpdateLocationStrategy.getChatPanelFrame(mainScreen)
+        
+        return WidgetLocation(
+            widgetFrame: .zero,
+            tabFrame: .zero,
+            defaultPanelLocation: .init(
+                frame: chatPanelFrame,
+                alignPanelTop: false
+            ),
+            suggestionPanelLocation: nil
+        )
     }
 
     func updatePanelState(_ location: WidgetLocation) async {
@@ -360,8 +375,15 @@ extension WidgetWindowsController {
             await MainActor.run {
                 let state = store.withState { $0 }
                 let isChatPanelDetached = state.chatPanelState.isDetached
-                let hasChat = state.chatPanelState.currentChatWorkspace != nil
-                    && !state.chatPanelState.currentChatWorkspace!.tabInfo.isEmpty
+                // Check if the user has requested to display the panel, regardless of workspace state
+                let isPanelDisplayed = state.chatPanelState.isPanelDisplayed
+                
+                // Keep the chat panel visible even when there's no workspace/tabs if it's explicitly displayed
+                // This ensures the login screen remains visible
+                let shouldShowChatPanel = isPanelDisplayed || (
+                    state.chatPanelState.currentChatWorkspace != nil &&
+                    !state.chatPanelState.currentChatWorkspace!.tabInfo.isEmpty
+                )
 
                 if let activeApp, activeApp.isXcode {
                     let application = activeApp.appElement
@@ -374,7 +396,7 @@ extension WidgetWindowsController {
                     windows.toastWindow.alphaValue = noFocus ? 0 : 1
 
                     if isChatPanelDetached {
-                        windows.chatPanelWindow.isWindowHidden = !hasChat
+                        windows.chatPanelWindow.isWindowHidden = !shouldShowChatPanel
                     } else {
                         windows.chatPanelWindow.isWindowHidden = noFocus
                     }
@@ -403,7 +425,7 @@ extension WidgetWindowsController {
                     }
                     windows.toastWindow.alphaValue = noFocus ? 0 : 1
                     if isChatPanelDetached {
-                        windows.chatPanelWindow.isWindowHidden = !hasChat
+                        windows.chatPanelWindow.isWindowHidden = !shouldShowChatPanel
                     } else {
                         windows.chatPanelWindow.isWindowHidden = noFocus && !windows
                             .chatPanelWindow.isKeyWindow

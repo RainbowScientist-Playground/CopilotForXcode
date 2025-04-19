@@ -3,9 +3,27 @@ import AppKit
 import SwiftUI
 import ComposableArchitecture
 
-public struct ChatTemplateDropdownView: View {
-    @Binding var templates: [ChatTemplate]
-    let onSelect: (ChatTemplate) -> Void
+protocol DropDownItem: Equatable {
+    var id: String { get }
+    var displayName: String { get }
+    var displayDescription: String { get }
+}
+
+extension ChatTemplate: DropDownItem {
+    var displayName: String { id }
+    var displayDescription: String { shortDescription }
+}
+
+extension ChatAgent: DropDownItem {
+    var id: String { slug }
+    var displayName: String { slug }
+    var displayDescription: String { description }
+}
+
+struct ChatDropdownView<T: DropDownItem>: View {
+    @Binding var items: [T]
+    let prefixSymbol: String
+    let onSelect: (T) -> Void
     @State private var selectedIndex = 0
     @State private var frameHeight: CGFloat = 0
     @State private var localMonitor: Any? = nil
@@ -13,19 +31,19 @@ public struct ChatTemplateDropdownView: View {
     public var body: some View {
         WithPerceptionTracking {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(templates.enumerated()), id: \.element.id) { index, template in
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     HStack {
-                        Text("/" + template.id)
+                        Text(prefixSymbol + item.displayName)
                             .hoverPrimaryForeground(isHovered: selectedIndex == index)
                         Spacer()
-                        Text(template.shortDescription)
+                        Text(item.displayDescription)
                             .hoverSecondaryForeground(isHovered: selectedIndex == index)
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        onSelect(template)
+                        onSelect(item)
                     }
                     .hoverBackground(isHovered: selectedIndex == index)
                     .onHover { isHovered in
@@ -53,7 +71,7 @@ public struct ChatTemplateDropdownView: View {
             )
             .frame(maxWidth: .infinity)
             .offset(y: -1 * frameHeight)
-            .onChange(of: templates) { _ in
+            .onChange(of: items) { _ in
                 selectedIndex = 0
             }
             .onAppear {
@@ -88,9 +106,9 @@ public struct ChatTemplateDropdownView: View {
     }
 
     private func moveSelection(up: Bool) {
-        guard !templates.isEmpty else { return }
+        guard !items.isEmpty else { return }
         let lowerBound = 0
-        let upperBound = templates.count - 1
+        let upperBound = items.count - 1
         let newIndex = selectedIndex + (up ? -1 : 1)
         selectedIndex = newIndex < lowerBound ? upperBound : (newIndex > upperBound ? lowerBound : newIndex)
     }
@@ -104,8 +122,8 @@ public struct ChatTemplateDropdownView: View {
     }
     
     private func handleTemplateSelection() {
-        if templates.count > 0 && selectedIndex < templates.count {
-            onSelect(templates[selectedIndex])
+        if items.count > 0 && selectedIndex < items.count {
+            onSelect(items[selectedIndex])
         }
     }
 }

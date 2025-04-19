@@ -10,39 +10,48 @@ struct ChatLoginView: View {
     var body: some View {
         WithPerceptionTracking {
             VStack(spacing: 0){
-                VStack(spacing: 20) {
+                VStack(spacing: 24) {
                     Spacer()
-                    Image("CopilotLogo")
-                        .resizable()
-                        .renderingMode(.template)
-                        .scaledToFill()
-                        .frame(width: 60.0, height: 60.0)
-                        .foregroundColor(.secondary)
-                    
-                    Text("Welcome to Copilot")
-                        .font(.system(size: 24))
-                    
-                    Text("Your AI-powered coding assistant\nI use the power of AI to help you:")
-                        .font(.system(size: 12))
-                    
-                    Button("Sign Up for Copilot Free") {
-                        if let url = URL(string: "https://github.com/features/copilot/plans") {
-                            openURL(url)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    
-                    HStack{
-                        Text("Already have an account?")
-                        Button("Sign In") { viewModel.signIn() }
-                            .buttonStyle(.borderless)
-                            .foregroundColor(Color("TextLinkForegroundColor"))
+                    VStack(spacing: 8) {
+                        Image("CopilotLogo")
+                            .resizable()
+                            .renderingMode(.template)
+                            .scaledToFill()
+                            .frame(width: 60.0, height: 60.0)
+                            .foregroundColor(.secondary)
                         
-                        if viewModel.isRunningAction || viewModel.waitingForSignIn {
-                            ProgressView()
-                                .controlSize(.small)
+                        Text("Welcome to Copilot")
+                            .font(.largeTitle)
+                            .multilineTextAlignment(.center)
+                        
+                        Text("Your AI-powered coding assistant")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                    }
+                    
+                    CopilotIntroView()
+                    
+                    VStack(spacing: 8) {
+                        Button("Sign Up for Copilot Free") {
+                            if let url = URL(string: "https://github.com/features/copilot/plans") {
+                                openURL(url)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        
+                        HStack{
+                            Text("Already have an account?")
+                            Button("Sign In") { viewModel.signIn() }
+                                .buttonStyle(.borderless)
+                                .foregroundColor(Color("TextLinkForegroundColor"))
+                            
+                            if viewModel.isRunningAction || viewModel.waitingForSignIn {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
                         }
                     }
+                    .padding(.top, 16)
                     
                     Spacer()
                     Text("Copilot Free and Copilot Pro may show [public code](https://aka.ms/github-copilot-match-public-code) suggestions and collect telemetry. You can change these [GitHub settings](https://aka.ms/github-copilot-settings) at any time. By continuing, you agree to our [terms](https://github.com/customer-terms/github-copilot-product-specific-terms) and [privacy policy](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).")

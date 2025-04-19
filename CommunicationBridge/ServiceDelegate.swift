@@ -136,28 +136,100 @@ actor ExtensionServiceLauncher {
         isLaunching = true
 
         Logger.communicationBridge.info("Launching extension service app.")
-
-        NSWorkspace.shared.openApplication(
-            at: appURL,
-            configuration: {
-                let configuration = NSWorkspace.OpenConfiguration()
-                configuration.createsNewApplicationInstance = false
-                configuration.addsToRecentItems = false
-                configuration.activates = false
-                return configuration
-            }()
-        ) { app, error in
-            if let error = error {
-                Logger.communicationBridge.error(
-                    "Failed to launch extension service app: \(error)"
-                )
-            } else {
-                Logger.communicationBridge.info(
-                    "Finished launching extension service app."
-                )
+        
+        // First check if the app is already running
+        if let runningApp = NSWorkspace.shared.runningApplications.first(where: { 
+            $0.bundleIdentifier == appIdentifier 
+        }) {
+            Logger.communicationBridge.info("Extension service app already running with PID: \(runningApp.processIdentifier)")
+            self.application = runningApp
+            self.isLaunching = false
+            return
+        }
+        
+        // Implement a retry mechanism with exponential backoff
+        Task {
+            var retryCount = 0
+            let maxRetries = 3
+            var success = false
+            
+            while !success && retryCount < maxRetries {
+                do {
+                    // Add a delay between retries with exponential backoff
+                    if retryCount > 0 {
+                        let delaySeconds = pow(2.0, Double(retryCount - 1)) 
+                        Logger.communicationBridge.info("Retrying launch after \(delaySeconds) seconds (attempt \(retryCount + 1) of \(maxRetries))")
+                        try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                    }
+                    
+                    // Use a task-based approach for launching with timeout
+                    let launchTask = Task<NSRunningApplication?, Error> { () -> NSRunningApplication? in
+                        return await withCheckedContinuation { continuation in
+                            NSWorkspace.shared.openApplication(
+                                at: appURL,
+                                configuration: {
+                                    let configuration = NSWorkspace.OpenConfiguration()
+                                    configuration.createsNewApplicationInstance = false
+                                    configuration.addsToRecentItems = false
+                                    configuration.activates = false
+                                    return configuration
+                                }()
+                            ) { app, error in
+                                if let error = error {
+                                    continuation.resume(returning: nil)
+                                } else {
+                                    continuation.resume(returning: app)
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Set a timeout for the launch operation
+                    let timeoutTask = Task {
+                        try await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
+                        return
+                    }
+                    
+                    // Wait for either the launch or the timeout
+                    let app = try await withTaskCancellationHandler {
+                        try await launchTask.value ?? nil
+                    } onCancel: {
+                        launchTask.cancel()
+                    }
+                    
+                    // Cancel the timeout task
+                    timeoutTask.cancel()
+                    
+                    if let app = app {
+                        // Success!
+                        self.application = app
+                        success = true
+                        break
+                    } else {
+                        // App is nil, retry
+                        retryCount += 1
+                        Logger.communicationBridge.info("Launch attempt \(retryCount) failed, app is nil")
+                    }
+                } catch {
+                    retryCount += 1
+                    Logger.communicationBridge.error("Error during launch attempt \(retryCount): \(error.localizedDescription)")
+                }
             }
-
-            self.application = app
+            
+            // Double-check we have a valid application
+            if !success && self.application == nil {
+                // After all retries, check once more if the app is running (it might have launched but we missed the callback)
+                if let runningApp = NSWorkspace.shared.runningApplications.first(where: { 
+                    $0.bundleIdentifier == appIdentifier 
+                }) {
+                    Logger.communicationBridge.info("Found running extension service after retries: \(runningApp.processIdentifier)")
+                    self.application = runningApp
+                    success = true
+                } else {
+                    Logger.communicationBridge.info("Failed to launch extension service after \(maxRetries) attempts")
+                }
+            }
+            
             self.isLaunching = false
         }
     }

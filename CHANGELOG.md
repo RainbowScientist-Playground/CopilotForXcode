@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.33.0 - April 17, 2025
+### Added
+- Added support for new models in Chat: Claude 3.7 Sonnet and GPT 4.5
+- Implemented @workspace context feature allowing questions about the entire codebase in Copilot Chat
+
+### Changed
+- Simplified access to Copilot Chat from the Copilot for Xcode app with a single click
+- Enhanced instructions for granting background permissions
+
+### Fixed
+- Resolved false alarms for sign-in and free plan limit notifications
+- Improved app launch performance
+- Fixed workspace and context update issues
+
 ## 0.32.0 - March 11, 2025 (General Availability)
 ### Added
 - Implemented model picker for selecting LLM model in chat

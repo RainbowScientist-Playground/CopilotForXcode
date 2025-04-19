@@ -40,7 +40,7 @@ extension AppDelegate {
 
         openCopilotForXcodeItem = NSMenuItem(
             title: "Settings",
-            action: #selector(openCopilotForXcode),
+            action: #selector(openCopilotForXcodeSettings),
             keyEquivalent: ""
         )
 

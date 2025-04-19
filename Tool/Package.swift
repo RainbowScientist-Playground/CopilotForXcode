@@ -61,7 +61,8 @@ let package = Package(
         .library(name: "CustomAsyncAlgorithms", targets: ["CustomAsyncAlgorithms"]),
         .library(name: "AXHelper", targets: ["AXHelper"]),
         .library(name: "Cache", targets: ["Cache"]),
-        .library(name: "StatusBarItemView", targets: ["StatusBarItemView"])
+        .library(name: "StatusBarItemView", targets: ["StatusBarItemView"]),
+        .library(name: "HostAppActivator", targets: ["HostAppActivator"]),
     ],
     dependencies: [
         // TODO: Update LanguageClient some day.
@@ -83,7 +84,7 @@ let package = Package(
     targets: [
         // MARK: - Helpers
 
-        .target(name: "XPCShared", dependencies: ["SuggestionBasic", "Logger", "Status"]),
+        .target(name: "XPCShared", dependencies: ["SuggestionBasic", "Logger", "Status", "HostAppActivator"]),
 
         .target(name: "Configs"),
 
@@ -121,6 +122,13 @@ let package = Package(
         ),
 
         .target(name: "ActiveApplicationMonitor"),
+        
+        .target(
+            name: "HostAppActivator",
+            dependencies: [
+                "Logger",
+            ]
+        ),
 
         .target(
             name: "SuggestionBasic",
@@ -199,8 +207,10 @@ let package = Package(
                 "Logger",
                 "Preferences",
                 "XcodeInspector",
+                "ConversationServiceProvider"
             ]
         ),
+        .testTarget(name: "WorkspaceTests", dependencies: ["Workspace"]),
 
         .target(
             name: "WorkspaceSuggestionService",
@@ -262,6 +272,7 @@ let package = Package(
         
         .target(name: "ConversationServiceProvider", dependencies: [
             .product(name: "CopilotForXcodeKit", package: "CopilotForXcodeKit"),
+            .product(name: "LanguageServerProtocol", package: "LanguageServerProtocol"),
         ]),
         
         .target(name: "TelemetryServiceProvider", dependencies: [

@@ -43,3 +43,18 @@ public struct CopilotModelPolicy: Codable, Equatable {
     public let state: String
     public let terms: String
 }
+
+// MARK: Conversation Agents
+public struct ChatAgent: Codable, Equatable {
+    public let slug: String
+    public let name: String
+    public let description: String
+    public let avatarUrl: String?
+    
+    public init(slug: String, name: String, description: String, avatarUrl: String?) {
+        self.slug = slug
+        self.name = name
+        self.description = description
+        self.avatarUrl = avatarUrl
+    }
+}

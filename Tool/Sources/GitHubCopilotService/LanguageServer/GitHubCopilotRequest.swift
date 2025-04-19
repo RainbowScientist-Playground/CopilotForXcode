@@ -356,6 +356,16 @@ enum GitHubCopilotRequest {
             .custom("copilot/models", .hash([:]))
         }
     }
+    
+    // MARK: - Conversation Agents
+    
+    struct GetAgents: GitHubCopilotRequestType {
+        typealias Response = Array<ChatAgent>
+
+        var request: ClientRequest {
+            .custom("conversation/agents", .hash([:]))
+        }
+    }
 
     // MARK: Copy code
 
@@ -413,7 +423,7 @@ public enum GitHubCopilotNotification {
 
         public var kind: StatusKind
         public var busy: Bool
-        public var message: String
+        public var message: String?
 
         public static func decode(fromParams params: JSONValue?) -> StatusNotification? {
             try? JSONDecoder().decode(Self.self, from: (try? JSONEncoder().encode(params)) ?? Data())
